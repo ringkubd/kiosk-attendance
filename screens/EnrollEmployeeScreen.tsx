@@ -353,6 +353,9 @@ export default function EnrollEmployeeScreen() {
           style={[
             styles.cameraContainer,
             isLandscape && styles.cameraContainerLandscape,
+            !isLandscape && {
+              height: Math.round(Math.min(360, height * 0.45)),
+            },
           ]}
         >
           <Camera
@@ -364,17 +367,18 @@ export default function EnrollEmployeeScreen() {
           />
 
           <View style={styles.overlay}>
-            <View style={styles.faceBorder} />
+            <View
+              style={[
+                styles.faceBorder,
+                !isLandscape && styles.faceBorderPortrait,
+              ]}
+            />
           </View>
         </View>
       </View>
 
       <SafeAreaView style={styles.actionsContainer}>
-        <ScrollView
-          style={styles.actions}
-          scrollEnabled={false}
-          showsVerticalScrollIndicator={false}
-        >
+        <View style={styles.actions}>
           <Button
             title="Capture Sample"
             onPress={handleCaptureSample}
@@ -400,7 +404,7 @@ export default function EnrollEmployeeScreen() {
               />
             </View>
           )}
-        </ScrollView>
+        </View>
       </SafeAreaView>
     </KeyboardAvoidingView>
   );
@@ -475,25 +479,32 @@ const styles = StyleSheet.create({
     borderColor: PRIMARY_COLOR,
     borderRadius: 100,
   },
+  faceBorderPortrait: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+  },
   mainContent: {
     flex: 1,
+    minHeight: 0,
   },
   landscape: {
     flexDirection: "row",
   },
   formContainerLandscape: {
     flex: 0.5,
-    padding: 10,
+    // padding: 10,
   },
   cameraContainerLandscape: {
     flex: 0.5,
-    minHeight: 200,
+    height: 200,
     backgroundColor: "#000000",
   },
   actionsContainer: {
     backgroundColor: SURFACE_COLOR,
     borderTopWidth: 1,
     borderTopColor: BORDER_COLOR,
+    paddingBottom: 8,
   },
   actions: {
     paddingHorizontal: 16,
@@ -506,7 +517,7 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: "row",
     gap: 12,
-    marginTop: 8,
+    // marginTop: 8,
   },
   resetButton: {
     flex: 1,

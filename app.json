@@ -70,6 +70,9 @@
     "extra": {
       "router": {
         "appRoot": "app"
+      },
+      "eas": {
+        "projectId": "b05b6192-ec62-442d-85ed-5aa2e85c4d32"
       }
     },
     "experiments": {
@@ -81,6 +84,7 @@
         "NSCameraUsageDescription": "$(PRODUCT_NAME) needs access to your camera for face recognition."
       },
       "bundleIdentifier": "com.kioskattendance.app"
-    }
+    },
+    "owner": "ringkubd"
   }
 }

@@ -1,6 +1,6 @@
 // Employee List Screen
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import
   {
     Alert,
@@ -10,6 +10,7 @@ import
     TouchableOpacity,
     View,
   } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { Button, Card } from "../components/common";
 import
   {
@@ -36,6 +37,12 @@ export default function EmployeeListScreen() {
   useEffect(() => {
     loadEmployees();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadEmployees();
+    }, []),
+  );
 
   const loadEmployees = async () => {
     try {

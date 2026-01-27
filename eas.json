@@ -1,0 +1,12 @@
+{
+  "build": {
+    "local": {
+      "developmentClient": false,
+      "releaseChannel": "default",
+      "workflow": "managed",
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}
