@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#CE4631",
+        "backgroundColor": "#1E88E5",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -39,9 +39,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#CE4631",
+          "backgroundColor": "#E3F2FD",
           "dark": {
-            "backgroundColor": "#CE4631"
+            "backgroundColor": "#E3F2FD"
           }
         }
       ],
@@ -66,6 +66,10 @@
       ],
       "expo-asset",
       "expo-sqlite"
+    ],
+    "assetBundlePatterns": [
+      "assets/models/*",
+      "assets/images/*"
     ],
     "extra": {
       "router": {

@@ -1,12 +1,16 @@
 // Constants
-export const PRIMARY_COLOR = "#2563EB";
-export const SECONDARY_COLOR = "#EEF2FF";
+export const PRIMARY_COLOR = "#1E88E5";
+export const PRIMARY_GRADIENT_START = "#1E88E5";
+export const PRIMARY_GRADIENT_END = "#42A5F5";
+export const ACCENT_COLOR = "#F57C00";
+export const SECONDARY_COLOR = "#E3F2FD";
 export const TEXT_PRIMARY = "#0F172A";
-export const TEXT_SECONDARY = "#475569";
+export const TEXT_SECONDARY = "#64748B";
 export const ERROR_COLOR = "#DC2626";
 export const SUCCESS_COLOR = "#16A34A";
 export const WARNING_COLOR = "#F59E0B";
-export const BACKGROUND_COLOR = "#F8FAFC";
+export const INFO_COLOR = "#2563EB";
+export const BACKGROUND_COLOR = "#F7F9FC";
 export const SURFACE_COLOR = "#FFFFFF";
 export const BORDER_COLOR = "#E2E8F0";
 

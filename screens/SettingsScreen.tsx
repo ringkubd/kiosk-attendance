@@ -25,9 +25,8 @@ import {
   BORDER_COLOR,
   PRIMARY_COLOR,
   SURFACE_COLOR,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
 } from "../utils/constants";
+import { colors, radii, spacing, typography } from "../ui/theme";
 
 export default function SettingsScreen() {
   const [threshold, setThreshold] = useState("0.55");
@@ -260,53 +259,53 @@ const styles = StyleSheet.create({
     backgroundColor: BACKGROUND_COLOR,
   },
   content: {
-    padding: 20,
+    padding: spacing.lg,
   },
   section: {
-    marginBottom: 20,
-    padding: 20,
+    marginBottom: spacing.lg,
+    padding: spacing.lg,
     backgroundColor: SURFACE_COLOR,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: TEXT_PRIMARY,
-    marginBottom: 16,
-    fontFamily: "sans-serif-medium",
+    fontSize: typography.h3,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+    fontFamily: typography.fontFamilyBold,
   },
   setting: {
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   label: {
-    fontSize: 14,
+    fontSize: typography.caption,
     fontWeight: "600",
-    color: TEXT_PRIMARY,
+    color: colors.textPrimary,
     marginBottom: 4,
-    fontFamily: "sans-serif-medium",
+    fontFamily: typography.fontFamilyMedium,
   },
   hint: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
-    marginBottom: 8,
-    fontFamily: "sans-serif",
+    fontSize: typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    fontFamily: typography.fontFamily,
   },
   input: {
     borderWidth: 1,
     borderColor: BORDER_COLOR,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: typography.body,
     backgroundColor: SURFACE_COLOR,
-    fontFamily: "sans-serif",
+    fontFamily: typography.fontFamily,
   },
   deviceId: {
-    fontSize: 14,
-    color: PRIMARY_COLOR,
+    fontSize: typography.caption,
+    color: colors.primary,
     fontFamily: "monospace",
     backgroundColor: BACKGROUND_COLOR,
-    padding: 12,
-    borderRadius: 6,
+    padding: spacing.sm,
+    borderRadius: radii.sm,
   },
   switchRow: {
     flexDirection: "row",
@@ -315,15 +314,15 @@ const styles = StyleSheet.create({
   },
   switchLabel: {
     flex: 1,
-    marginRight: 16,
+    marginRight: spacing.md,
   },
   changePinButton: {
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
   regenerateButton: {
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
   saveButton: {
-    marginBottom: 40,
+    marginBottom: spacing.xxl,
   },
 });

@@ -1,0 +1,11 @@
+{
+  "build": {
+    "local": {
+      "developmentClient": false,
+      "releaseChannel": "default",
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}

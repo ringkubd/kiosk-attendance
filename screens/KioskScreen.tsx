@@ -1,41 +1,52 @@
 // Kiosk Screen - Main face recognition check-in/out screen
 import { useIsFocused } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import * as Speech from "expo-speech";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    Vibration,
-    View,
+  AppState,
+  type AppStateStatus,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Vibration,
+  View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
-    Camera,
-    useCameraDevice,
-    useCameraPermission,
+  Camera as VisionCamera,
+  useCameraDevice,
+  useCameraPermission,
 } from "react-native-vision-camera";
+import {
+  Camera as FaceDetectorCamera,
+  type Face,
+  type FaceDetectionOptions,
+} from "react-native-vision-camera-face-detector";
 import { Button, Card } from "../components/common";
 import { detectFace } from "../ml/faceDetection";
 import { recognizeFaceWithDetection } from "../ml/faceRecognition";
 import {
-    generateChallenge,
-    processLivenessFrame,
-    resetLiveness,
+  generateChallenge,
+  processLivenessFrame,
+  resetLiveness,
 } from "../ml/liveness";
-import { logAttendance } from "../services/attendance";
+import { DuplicateAttendanceError, logAttendance } from "../services/attendance";
 import { getSettings } from "../services/settings";
 import type { LivenessChallenge } from "../types";
 import {
-    ERROR_COLOR,
-    PRIMARY_COLOR,
-    RECOGNITION_THRESHOLD,
-    SUCCESS_COLOR,
-    SURFACE_COLOR,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
+  ERROR_COLOR,
+  PRIMARY_COLOR,
+  RECOGNITION_THRESHOLD,
+  SUCCESS_COLOR,
+  SURFACE_COLOR,
+  TEXT_PRIMARY,
+  TEXT_SECONDARY,
 } from "../utils/constants";
 import { formatTime } from "../utils/helpers";
 import { Logger } from "../utils/logger";
+import { colors, radii, spacing, typography } from "../ui/theme";
 
 type KioskState = "READY" | "PROCESSING" | "SUCCESS" | "FAIL" | "LIVENESS";
 
@@ -60,16 +71,42 @@ export default function KioskScreen() {
 
   const device = useCameraDevice("front");
   const { hasPermission, requestPermission } = useCameraPermission();
-  const camera = useRef<Camera>(null);
+  const camera = useRef<VisionCamera>(null);
   const isFocused = useIsFocused();
   const processingRef = useRef(false);
   const lastProcessTime = useRef(0);
+  const lastFaceUpdate = useRef(0);
+  const lastFocusAt = useRef(0);
+  const focusInFlight = useRef(false);
+  const lastSpoken = useRef<{ msg: string; at: number }>({ msg: "", at: 0 });
+  const [faceBox, setFaceBox] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [viewSize, setViewSize] = useState({ width: 0, height: 0 });
+  const voiceEnabled = true;
+  const [appState, setAppState] = useState<AppStateStatus>(
+    AppState.currentState,
+  );
+  const cameraActive = isFocused && appState === "active";
 
   useEffect(() => {
     if (!hasPermission) {
       requestPermission();
     }
   }, [hasPermission]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      setAppState(nextState);
+      if (nextState !== "active") {
+        setFaceBox(null);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     getSettings()
@@ -93,6 +130,149 @@ export default function KioskScreen() {
 
   const delay = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
+
+  const speakMessage = useCallback(
+    (text: string) => {
+      if (!voiceEnabled || !text) return;
+      const now = Date.now();
+      if (
+        text === lastSpoken.current.msg &&
+        now - lastSpoken.current.at < 2500
+      ) {
+        return;
+      }
+      lastSpoken.current = { msg: text, at: now };
+      Speech.stop();
+      Speech.speak(text, { rate: 0.95, pitch: 1.0 });
+    },
+    [voiceEnabled],
+  );
+
+  useEffect(() => {
+    if (!voiceEnabled) return;
+    if (message.includes("%")) return;
+    if (state === "PROCESSING") return;
+    if (
+      message.toLowerCase().includes("analyzing") ||
+      message.toLowerCase().includes("recognizing")
+    ) {
+      return;
+    }
+    speakMessage(message);
+  }, [message, speakMessage, state, voiceEnabled]);
+
+  const faceDetectionOptions = useMemo<FaceDetectionOptions>(
+    () => ({
+      performanceMode: "fast",
+      landmarkMode: "all",
+      classificationMode: "all",
+      contourMode: "none",
+      minFaceSize: 0.15,
+      trackingEnabled: true,
+      autoMode: true,
+      cameraFacing: "front",
+      windowWidth: viewSize.width || 1,
+      windowHeight: viewSize.height || 1,
+    }),
+    [viewSize.height, viewSize.width],
+  );
+
+  const extractFaceBox = useCallback((face: Face) => {
+    const anyFace = face as any;
+    const bounds = anyFace.bounds || anyFace.boundingBox || anyFace.frame;
+    if (!bounds) return null;
+
+    if (
+      typeof bounds.x === "number" &&
+      typeof bounds.y === "number" &&
+      typeof bounds.width === "number" &&
+      typeof bounds.height === "number"
+    ) {
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    }
+
+    if (bounds.origin && bounds.size) {
+      return {
+        x: bounds.origin.x,
+        y: bounds.origin.y,
+        width: bounds.size.width,
+        height: bounds.size.height,
+      };
+    }
+
+    if (
+      typeof bounds.left === "number" &&
+      typeof bounds.top === "number" &&
+      typeof bounds.right === "number" &&
+      typeof bounds.bottom === "number"
+    ) {
+      return {
+        x: bounds.left,
+        y: bounds.top,
+        width: bounds.right - bounds.left,
+        height: bounds.bottom - bounds.top,
+      };
+    }
+
+    return null;
+  }, []);
+
+  const handleFacesDetected = useCallback(
+    (faces: Face[]) => {
+      const now = Date.now();
+      if (now - lastFaceUpdate.current < 120) return;
+      lastFaceUpdate.current = now;
+
+      if (!faces || faces.length === 0) {
+        if (faceBox) setFaceBox(null);
+        return;
+      }
+
+      const box = extractFaceBox(faces[0]);
+      if (!box) return;
+
+      setFaceBox(box);
+
+      const supportsFocus = (device as any)?.supportsFocus;
+      if (!camera.current || supportsFocus === false || state === "PROCESSING") {
+        return;
+      }
+
+      if (focusInFlight.current) return;
+      if (now - lastFocusAt.current < 800) return;
+      lastFocusAt.current = now;
+      focusInFlight.current = true;
+
+      const centerX = box.x + box.width / 2;
+      const centerY = box.y + box.height / 2;
+
+      const focusX = Math.max(0, Math.min(centerX, viewSize.width));
+      const focusY = Math.max(0, Math.min(centerY, viewSize.height));
+
+      Promise.resolve(camera.current.focus({ x: focusX, y: focusY }))
+        .catch((err: any) => {
+          const msg = err?.message || "";
+          if (msg.includes("focus-canceled")) return;
+          logger.warn("Auto focus failed", err);
+        })
+        .finally(() => {
+          focusInFlight.current = false;
+        });
+    },
+    [
+      device,
+      extractFaceBox,
+      faceBox,
+      state,
+      viewSize.height,
+      viewSize.width,
+    ],
+  );
 
   const handleCapture = async () => {
     if (!camera.current || processingRef.current) return;
@@ -232,12 +412,18 @@ export default function KioskScreen() {
       );
       Vibration.vibrate([100, 50, 100]);
     } catch (error: any) {
-      logger.error("Capture failed", error);
+      // Log expected duplicate condition at INFO, otherwise error
+      if (error instanceof DuplicateAttendanceError) {
+        logger.info("Capture duplicate prevented", error);
+      } else {
+        logger.error("Capture failed", error);
+      }
+
       // More helpful message for camera runtime errors
       const msg = error?.message || "Recognition failed. Please try again.";
-      if (msg.includes("Duplicate attendance prevented")) {
+      if (error instanceof DuplicateAttendanceError) {
         setState("SUCCESS");
-        setMessage(msg);
+        setMessage(error.message);
         return;
       }
       if (
@@ -291,17 +477,42 @@ export default function KioskScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Camera
+    <SafeAreaView
+      style={styles.container}
+      onLayout={(event) => {
+        const { width, height } = event.nativeEvent.layout;
+        if (width !== viewSize.width || height !== viewSize.height) {
+          setViewSize({ width, height });
+        }
+      }}
+    >
+      <StatusBar barStyle="light-content" />
+      <FaceDetectorCamera
         ref={camera}
         style={StyleSheet.absoluteFill}
         device={device}
-        isActive={isFocused}
+        isActive={cameraActive}
         photo={true}
+        faceDetectionCallback={handleFacesDetected}
+        faceDetectionOptions={faceDetectionOptions}
       />
 
       <View style={styles.overlay}>
-        <View style={styles.faceBorder} />
+        {faceBox ? (
+          <View
+            style={[
+              styles.faceTracker,
+              {
+                left: faceBox.x,
+                top: faceBox.y,
+                width: faceBox.width,
+                height: faceBox.height,
+              },
+            ]}
+          />
+        ) : (
+          <View style={styles.faceBorder} />
+        )}
       </View>
 
       {/* Status Banner */}
@@ -348,7 +559,7 @@ export default function KioskScreen() {
           <Text style={styles.adminButtonText}>Admin</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -358,21 +569,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#0B1220",
   },
   permissionText: {
-    fontSize: 18,
-    color: TEXT_SECONDARY,
+    fontSize: typography.bodyLarge,
+    color: colors.textSecondary,
     textAlign: "center",
-    marginBottom: 24,
-    fontFamily: "sans-serif-medium",
+    marginBottom: spacing.xl,
+    fontFamily: typography.fontFamilyMedium,
   },
   statusBanner: {
     position: "absolute",
-    top: 16,
-    left: 16,
-    right: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
+    top: spacing.md,
+    left: spacing.md,
+    right: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
     zIndex: 10,
-    borderRadius: 14,
+    borderRadius: radii.lg,
     shadowColor: "#0B1220",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
@@ -381,51 +592,51 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: "#FFFFFF",
-    fontSize: 16,
+    fontSize: typography.body,
     fontWeight: "700",
     textAlign: "center",
-    fontFamily: "sans-serif-medium",
+    fontFamily: typography.fontFamilyBold,
   },
   resultContainer: {
     position: "absolute",
     top: 110,
-    left: 16,
-    right: 16,
+    left: spacing.md,
+    right: spacing.md,
     zIndex: 20,
   },
   resultCard: {
     alignItems: "center",
     backgroundColor: SURFACE_COLOR,
-    borderRadius: 18,
+    borderRadius: radii.lg,
   },
   resultName: {
-    fontSize: 30,
+    fontSize: typography.h1,
     fontWeight: "800",
-    color: TEXT_PRIMARY,
-    marginBottom: 8,
-    fontFamily: "sans-serif-medium",
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    fontFamily: typography.fontFamilyBold,
   },
   resultType: {
-    fontSize: 24,
+    fontSize: typography.h2,
     fontWeight: "700",
     color: PRIMARY_COLOR,
-    marginBottom: 8,
-    fontFamily: "sans-serif-medium",
+    marginBottom: spacing.sm,
+    fontFamily: typography.fontFamilyBold,
   },
   resultTime: {
-    fontSize: 16,
-    color: TEXT_SECONDARY,
-    marginBottom: 8,
-    fontFamily: "sans-serif",
+    fontSize: typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    fontFamily: typography.fontFamily,
   },
   resultConfidence: {
-    fontSize: 14,
+    fontSize: typography.caption,
     color: "#94A3B8",
-    fontFamily: "sans-serif",
+    fontFamily: typography.fontFamily,
   },
   bottomContainer: {
     position: "absolute",
-    bottom: 40,
+    bottom: spacing.xl + 12,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -455,20 +666,20 @@ const styles = StyleSheet.create({
     backgroundColor: PRIMARY_COLOR,
   },
   adminButton: {
-    marginTop: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     backgroundColor: "rgba(15, 23, 42, 0.75)",
-    borderRadius: 12,
+    borderRadius: radii.md,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
   },
   adminButtonText: {
     color: "#FFFFFF",
-    fontSize: 16,
+    fontSize: typography.body,
     fontWeight: "700",
     letterSpacing: 0.3,
-    fontFamily: "sans-serif-medium",
+    fontFamily: typography.fontFamilyMedium,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -481,5 +692,11 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: PRIMARY_COLOR,
     borderRadius: 130,
+  },
+  faceTracker: {
+    position: "absolute",
+    borderWidth: 3,
+    borderColor: PRIMARY_COLOR,
+    borderRadius: 18,
   },
 });

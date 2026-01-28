@@ -13,7 +13,8 @@ import
   } from "react-native";
 import { Button, Card } from "../components/common";
 import { verifyAdminPin } from "../services/settings";
-import { BACKGROUND_COLOR, TEXT_PRIMARY, TEXT_SECONDARY } from "../utils/constants";
+import { BACKGROUND_COLOR } from "../utils/constants";
+import { colors, radii, spacing, typography } from "../ui/theme";
 
 export default function AdminLoginScreen() {
   const [pin, setPin] = useState("");
@@ -95,36 +96,36 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   card: {
-    padding: 24,
-    borderRadius: 20,
+    padding: spacing.xl,
+    borderRadius: radii.xl,
   },
   title: {
-    fontSize: 28,
+    fontSize: typography.h1,
     fontWeight: "800",
-    color: TEXT_PRIMARY,
-    marginBottom: 8,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
     textAlign: "center",
-    fontFamily: "sans-serif-medium",
+    fontFamily: typography.fontFamilyBold,
   },
   subtitle: {
-    fontSize: 16,
-    color: TEXT_SECONDARY,
-    marginBottom: 32,
+    fontSize: typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.xxl,
     textAlign: "center",
-    fontFamily: "sans-serif",
+    fontFamily: typography.fontFamily,
   },
   input: {
     borderWidth: 1,
-    borderColor: "rgba(37, 99, 235, 0.2)",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 18,
-    marginBottom: 24,
+    borderColor: "rgba(30, 136, 229, 0.25)",
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: typography.bodyLarge,
+    marginBottom: spacing.xl,
     textAlign: "center",
     letterSpacing: 8,
-    backgroundColor: "#FFFFFF",
-    fontFamily: "sans-serif-medium",
+    backgroundColor: colors.surface,
+    fontFamily: typography.fontFamilyMedium,
   },
   button: {
     marginBottom: 12,

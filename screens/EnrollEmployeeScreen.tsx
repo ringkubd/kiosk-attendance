@@ -1,10 +1,12 @@
 // Enroll Employee Screen
 import { useIsFocused } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import
   {
     Alert,
+    AppState,
+    type AppStateStatus,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -15,13 +17,17 @@ import
     useWindowDimensions,
   } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import
-  {
-    Camera,
-    useCameraDevice,
-    useCameraPermission,
-  } from "react-native-vision-camera";
-import { Button, Card } from "../components/common";
+import {
+  Camera as VisionCamera,
+  useCameraDevice,
+  useCameraPermission,
+} from "react-native-vision-camera";
+import {
+  Camera as FaceDetectorCamera,
+  type Face,
+  type FaceDetectionOptions,
+} from "react-native-vision-camera-face-detector";
+import { Button, Card, SectionHeader } from "../components/common";
 import { getAllActiveEmployees, insertEmployee } from "../db/database";
 import { detectFaces, validateFaceQuality } from "../ml/faceDetection";
 import
@@ -32,17 +38,15 @@ import
   } from "../ml/onnxInference";
 import { preprocessImage } from "../ml/preprocessor";
 import { getActiveOrgBranchIds } from "../services/settings";
-import
-  {
-    BACKGROUND_COLOR,
-    BORDER_COLOR,
-    ENROLL_DUPLICATE_THRESHOLD,
-    PRIMARY_COLOR,
-    SUCCESS_COLOR,
-    SURFACE_COLOR,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-  } from "../utils/constants";
+import {
+  BACKGROUND_COLOR,
+  BORDER_COLOR,
+  ENROLL_DUPLICATE_THRESHOLD,
+  PRIMARY_COLOR,
+  SUCCESS_COLOR,
+  SURFACE_COLOR,
+} from "../utils/constants";
+import { colors, radii, spacing, typography } from "../ui/theme";
 import
   {
     averageEmbeddings,
@@ -62,11 +66,149 @@ export default function EnrollEmployeeScreen() {
 
   const device = useCameraDevice("front");
   const { hasPermission, requestPermission } = useCameraPermission();
-  const camera = useRef<Camera>(null);
+  const camera = useRef<VisionCamera>(null);
   const isFocused = useIsFocused();
+  const lastFaceUpdate = useRef(0);
+  const lastFocusAt = useRef(0);
+  const focusInFlight = useRef(false);
+  const [faceBox, setFaceBox] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [viewSize, setViewSize] = useState({ width: 0, height: 0 });
+  const [appState, setAppState] = useState<AppStateStatus>(
+    AppState.currentState,
+  );
 
   const { width, height } = useWindowDimensions();
-  const isLandscape = width > height; // Adjust layout when device is wider than tall
+  const isLandscape = width > height;
+  const isTablet = Math.max(width, height) >= 900;
+  const isLandscapeLayout = isLandscape && isTablet;
+  const cameraActive = isFocused && appState === "active";
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      setAppState(nextState);
+      if (nextState !== "active") {
+        setFaceBox(null);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  const faceDetectionOptions = useMemo<FaceDetectionOptions>(
+    () => ({
+      performanceMode: "fast",
+      landmarkMode: "all",
+      classificationMode: "all",
+      contourMode: "none",
+      minFaceSize: 0.15,
+      trackingEnabled: true,
+      autoMode: true,
+      cameraFacing: "front",
+      windowWidth: viewSize.width || 1,
+      windowHeight: viewSize.height || 1,
+    }),
+    [viewSize.height, viewSize.width],
+  );
+
+  const extractFaceBox = useCallback((face: Face) => {
+    const anyFace = face as any;
+    const bounds = anyFace.bounds || anyFace.boundingBox || anyFace.frame;
+    if (!bounds) return null;
+
+    if (
+      typeof bounds.x === "number" &&
+      typeof bounds.y === "number" &&
+      typeof bounds.width === "number" &&
+      typeof bounds.height === "number"
+    ) {
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    }
+
+    if (bounds.origin && bounds.size) {
+      return {
+        x: bounds.origin.x,
+        y: bounds.origin.y,
+        width: bounds.size.width,
+        height: bounds.size.height,
+      };
+    }
+
+    if (
+      typeof bounds.left === "number" &&
+      typeof bounds.top === "number" &&
+      typeof bounds.right === "number" &&
+      typeof bounds.bottom === "number"
+    ) {
+      return {
+        x: bounds.left,
+        y: bounds.top,
+        width: bounds.right - bounds.left,
+        height: bounds.bottom - bounds.top,
+      };
+    }
+
+    return null;
+  }, []);
+
+  const handleFacesDetected = useCallback(
+    (faces: Face[]) => {
+      const now = Date.now();
+      if (now - lastFaceUpdate.current < 120) return;
+      lastFaceUpdate.current = now;
+
+      if (!faces || faces.length === 0) {
+        if (faceBox) setFaceBox(null);
+        return;
+      }
+
+      const box = extractFaceBox(faces[0]);
+      if (!box) return;
+      setFaceBox(box);
+
+      const supportsFocus = (device as any)?.supportsFocus;
+      if (!camera.current || supportsFocus === false || capturing) {
+        return;
+      }
+
+      if (focusInFlight.current) return;
+      if (now - lastFocusAt.current < 800) return;
+      lastFocusAt.current = now;
+      focusInFlight.current = true;
+
+      const centerX = box.x + box.width / 2;
+      const centerY = box.y + box.height / 2;
+
+      const focusX = Math.max(0, Math.min(centerX, viewSize.width));
+      const focusY = Math.max(0, Math.min(centerY, viewSize.height));
+
+      Promise.resolve(camera.current.focus({ x: focusX, y: focusY }))
+        .catch((err: any) => {
+          const msg = err?.message || "";
+          if (msg.includes("focus-canceled")) return;
+          Logger.warn("Auto focus failed", err);
+        })
+        .finally(() => {
+          focusInFlight.current = false;
+        });
+    },
+    [
+      capturing,
+      device,
+      extractFaceBox,
+      faceBox,
+      viewSize.height,
+      viewSize.width,
+    ],
+  );
 
   const handleCaptureSample = async () => {
     if (!camera.current || capturing) return;
@@ -301,16 +443,16 @@ export default function EnrollEmployeeScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
-      <View style={[styles.mainContent, isLandscape && styles.landscape]}>
+      <View style={[styles.mainContent, isLandscapeLayout && styles.landscape]}>
         <ScrollView
           style={[
             styles.formContainer,
-            isLandscape && styles.formContainerLandscape,
+            isLandscapeLayout && styles.formContainerLandscape,
           ]}
           showsVerticalScrollIndicator={false}
         >
           <Card style={styles.formCard}>
-            <Text style={styles.title}>Enroll New Employee</Text>
+            <SectionHeader title="Enroll New Employee" />
 
             <TextInput
               style={styles.input}
@@ -352,27 +494,53 @@ export default function EnrollEmployeeScreen() {
         <View
           style={[
             styles.cameraContainer,
-            isLandscape && styles.cameraContainerLandscape,
-            !isLandscape && {
+            isLandscapeLayout && styles.cameraContainerLandscape,
+            !isLandscapeLayout && {
               height: Math.round(Math.min(360, height * 0.45)),
             },
           ]}
+          onLayout={(event) => {
+            const { width: layoutWidth, height: layoutHeight } =
+              event.nativeEvent.layout;
+            if (
+              layoutWidth !== viewSize.width ||
+              layoutHeight !== viewSize.height
+            ) {
+              setViewSize({ width: layoutWidth, height: layoutHeight });
+            }
+          }}
         >
-          <Camera
+          <FaceDetectorCamera
             ref={camera}
             style={StyleSheet.absoluteFill}
             device={device}
-            isActive={isFocused}
+            isActive={cameraActive}
             photo={true}
+            faceDetectionCallback={handleFacesDetected}
+            faceDetectionOptions={faceDetectionOptions}
           />
 
           <View style={styles.overlay}>
-            <View
-              style={[
-                styles.faceBorder,
-                !isLandscape && styles.faceBorderPortrait,
-              ]}
-            />
+            {faceBox ? (
+              <View
+                style={[
+                  styles.faceTracker,
+                  {
+                    left: faceBox.x,
+                    top: faceBox.y,
+                    width: faceBox.width,
+                    height: faceBox.height,
+                  },
+                ]}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.faceBorder,
+                  !isLandscapeLayout && styles.faceBorderPortrait,
+                ]}
+              />
+            )}
           </View>
         </View>
       </View>
@@ -417,40 +585,33 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     flex: 1,
-    padding: 16,
+    padding: spacing.lg,
   },
   formCard: {
-    padding: 16,
+    padding: spacing.lg,
     backgroundColor: SURFACE_COLOR,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: TEXT_PRIMARY,
-    marginBottom: 12,
-    fontFamily: "sans-serif-medium",
+    marginBottom: spacing.md,
   },
   input: {
     borderWidth: 1,
     borderColor: BORDER_COLOR,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    marginBottom: 10,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: typography.body,
+    marginBottom: spacing.sm,
     backgroundColor: "#FAFAFA",
-    fontFamily: "sans-serif",
+    fontFamily: typography.fontFamily,
   },
   progressContainer: {
     marginTop: 6,
   },
   progressText: {
-    fontSize: 12,
+    fontSize: typography.caption,
     fontWeight: "600",
-    color: TEXT_SECONDARY,
-    marginBottom: 6,
-    fontFamily: "sans-serif-medium",
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    fontFamily: typography.fontFamilyMedium,
   },
   progressBar: {
     height: 6,
@@ -476,13 +637,19 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderWidth: 3,
-    borderColor: PRIMARY_COLOR,
+    borderColor: colors.primary,
     borderRadius: 100,
   },
   faceBorderPortrait: {
     width: 160,
     height: 160,
     borderRadius: 80,
+  },
+  faceTracker: {
+    position: "absolute",
+    borderWidth: 3,
+    borderColor: PRIMARY_COLOR,
+    borderRadius: 14,
   },
   mainContent: {
     flex: 1,
@@ -504,19 +671,19 @@ const styles = StyleSheet.create({
     backgroundColor: SURFACE_COLOR,
     borderTopWidth: 1,
     borderTopColor: BORDER_COLOR,
-    paddingBottom: 8,
+    paddingBottom: spacing.sm,
   },
   actions: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     backgroundColor: SURFACE_COLOR,
   },
   captureButton: {
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   actionRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: spacing.sm,
     // marginTop: 8,
   },
   resetButton: {
@@ -526,14 +693,14 @@ const styles = StyleSheet.create({
     flex: 2,
   },
   permissionCard: {
-    margin: 16,
+    margin: spacing.lg,
     alignItems: "center",
   },
   permissionText: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    marginBottom: 16,
+    fontSize: typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
     textAlign: "center",
-    fontFamily: "sans-serif-medium",
+    fontFamily: typography.fontFamilyMedium,
   },
 });
