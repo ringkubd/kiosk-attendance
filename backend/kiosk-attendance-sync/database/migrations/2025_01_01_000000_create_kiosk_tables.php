@@ -7,135 +7,129 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        Schema::create('orgs', function (Blueprint $table) {
+        Schema::create('attendance_employees', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('name');
-            $table->string('api_base_url')->nullable();
-            $table->string('sync_token')->nullable();
+            $table->foreignId('user_id')->constrained('users');
+            $table->foreignId('business_id')->constrained('businesses');
+            $table->foreignId('branch_id')->constrained('branches');
+            $table->foreignId('department_id')->nullable()->constrained('departments');
+            $table->string('employee_code')->nullable()->unique();
+            $table->boolean('face_enrolled')->default(false);
+            $table->text('face_embeddings_encrypted')->nullable();
+            $table->enum('status', ['active', 'inactive', 'suspended'])->default('active');
+            $table->enum('sync_status', ['pending', 'synced', 'failed'])->default('pending');
+            $table->timestamp('last_synced_at')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('attendance_devices', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('device_code')->unique();
+            $table->string('registration_code')->unique();
+            $table->string('device_name')->nullable();
+            $table->foreignId('business_id')->constrained('businesses');
+            $table->foreignId('branch_id')->constrained('branches');
+            $table->text('device_token')->nullable();
+            $table->string('ip_address')->nullable();
+            $table->timestamp('last_active_at')->nullable();
+            $table->enum('status', ['active', 'inactive', 'maintenance'])->default('active');
+            $table->text('settings_json')->nullable();
             $table->timestamps();
         });
 
-        Schema::create('branches', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->uuid('org_id');
+        Schema::create('attendance_shifts', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->foreignId('business_id')->constrained('businesses');
+            $table->foreignId('branch_id')->nullable()->constrained('branches');
             $table->string('name');
-            $table->string('timezone')->default('Asia/Dhaka');
+            $table->time('start_time');
+            $table->time('end_time');
+            $table->integer('grace_period_minutes')->default(15);
+            $table->json('working_days')->nullable();
+            $table->enum('status', ['active', 'inactive'])->default('active');
             $table->timestamps();
-
-            $table->foreign('org_id')->references('id')->on('orgs')->onDelete('cascade');
         });
 
-        Schema::create('devices', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->uuid('org_id');
-            $table->uuid('branch_id');
-            $table->string('name');
-            $table->timestamp('registered_at');
-            $table->timestamp('last_sync_at')->nullable();
-
-            $table->foreign('org_id')->references('id')->on('orgs')->onDelete('cascade');
-            $table->foreign('branch_id')->references('id')->on('branches')->onDelete('cascade');
-        });
-
-        Schema::create('employees', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->uuid('org_id');
-            $table->uuid('branch_id');
-            $table->string('code')->nullable();
-            $table->string('name');
-            $table->string('status')->default('active');
-            $table->binary('embedding_avg')->nullable();
-            $table->text('embeddings_json')->nullable();
-            $table->string('profile_image_path')->nullable();
-            $table->string('sync_state')->default('dirty');
-            $table->timestamp('updated_at');
-
-            $table->foreign('org_id')->references('id')->on('orgs')->onDelete('cascade');
-            $table->foreign('branch_id')->references('id')->on('branches')->onDelete('cascade');
-            $table->unique(['org_id', 'code']);
-        });
-
-        Schema::create('shifts', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->uuid('org_id');
-            $table->uuid('branch_id')->nullable();
-            $table->string('name');
-            $table->string('start_time');
-            $table->string('end_time');
-            $table->integer('grace_in_min')->default(0);
-            $table->integer('grace_out_min')->default(0);
-            $table->boolean('break_allowed')->default(false);
-            $table->boolean('ot_allowed')->default(false);
-            $table->integer('ot_start_after_min')->default(0);
-            $table->integer('ot_rounding_min')->default(0);
-            $table->integer('min_work_for_present_min')->default(0);
-            $table->string('sync_state')->default('dirty');
-            $table->timestamp('updated_at');
-
-            $table->foreign('org_id')->references('id')->on('orgs')->onDelete('cascade');
-            $table->foreign('branch_id')->references('id')->on('branches')->onDelete('cascade');
-        });
-
-        Schema::create('employee_shifts', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->uuid('org_id');
-            $table->uuid('employee_id');
-            $table->uuid('shift_id');
+        Schema::create('attendance_employee_shifts', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->uuid('attendance_employee_id');
+            $table->unsignedBigInteger('shift_id');
             $table->date('effective_from');
             $table->date('effective_to')->nullable();
+            $table->timestamps();
 
-            $table->foreign('org_id')->references('id')->on('orgs')->onDelete('cascade');
-            $table->foreign('employee_id')->references('id')->on('employees')->onDelete('cascade');
-            $table->foreign('shift_id')->references('id')->on('shifts')->onDelete('cascade');
+            $table->foreign('attendance_employee_id')
+                ->references('id')
+                ->on('attendance_employees')
+                ->onDelete('cascade');
+            $table->foreign('shift_id')
+                ->references('id')
+                ->on('attendance_shifts')
+                ->onDelete('cascade');
         });
 
         Schema::create('attendance_logs', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->uuid('org_id');
-            $table->uuid('branch_id');
+            $table->uuid('attendance_employee_id');
+            $table->enum('type', ['IN', 'OUT', 'BREAK_START', 'BREAK_END']);
+            $table->timestamp('check_time');
             $table->uuid('device_id');
-            $table->uuid('employee_id');
-            $table->string('type');
-            $table->bigInteger('ts_local');
-            $table->float('confidence');
-            $table->boolean('synced')->default(false);
-            $table->string('server_id')->nullable();
-            $table->timestamp('created_at');
+            $table->foreignId('branch_id')->constrained('branches');
+            $table->decimal('confidence_score', 3, 2)->nullable();
+            $table->decimal('location_lat', 10, 7)->nullable();
+            $table->decimal('location_lng', 10, 7)->nullable();
+            $table->text('photo_proof_path')->nullable();
+            $table->text('notes')->nullable();
+            $table->enum('sync_status', ['pending', 'confirmed'])->default('confirmed');
+            $table->timestamp('synced_from_device_at')->nullable();
+            $table->timestamps();
 
-            $table->foreign('org_id')->references('id')->on('orgs')->onDelete('cascade');
-            $table->foreign('branch_id')->references('id')->on('branches')->onDelete('cascade');
-            $table->foreign('device_id')->references('id')->on('devices')->onDelete('cascade');
-            $table->foreign('employee_id')->references('id')->on('employees')->onDelete('cascade');
+            $table->foreign('attendance_employee_id')
+                ->references('id')
+                ->on('attendance_employees')
+                ->onDelete('cascade');
+            $table->foreign('device_id')
+                ->references('id')
+                ->on('attendance_devices')
+                ->onDelete('cascade');
         });
 
-        Schema::create('daily_summaries', function (Blueprint $table) {
-            $table->uuid('org_id');
-            $table->uuid('branch_id');
-            $table->uuid('employee_id');
-            $table->date('date');
-            $table->uuid('shift_id')->nullable();
-            $table->bigInteger('first_in_ts')->nullable();
-            $table->bigInteger('last_out_ts')->nullable();
-            $table->integer('work_min')->default(0);
-            $table->integer('late_min')->default(0);
-            $table->integer('early_min')->default(0);
-            $table->integer('ot_min')->default(0);
-            $table->string('status');
-            $table->timestamp('updated_at');
+        Schema::create('attendance_reports_cache', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->foreignId('business_id')->constrained('businesses');
+            $table->foreignId('branch_id')->nullable()->constrained('branches');
+            $table->string('report_type');
+            $table->date('report_date');
+            $table->mediumText('data_json');
+            $table->timestamp('generated_at');
+        });
 
-            $table->primary(['org_id', 'branch_id', 'employee_id', 'date']);
+        Schema::create('attendance_sync_logs', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->uuid('device_id');
+            $table->enum('sync_type', ['employee_push', 'log_pull', 'log_ack', 'device_register', 'shift_pull']);
+            $table->integer('record_count')->default(0);
+            $table->enum('status', ['success', 'partial', 'failed'])->default('success');
+            $table->text('error_message')->nullable();
+            $table->timestamp('started_at');
+            $table->timestamp('completed_at')->nullable();
+
+            $table->foreign('device_id')
+                ->references('id')
+                ->on('attendance_devices')
+                ->onDelete('cascade');
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('daily_summaries');
+        Schema::dropIfExists('attendance_sync_logs');
+        Schema::dropIfExists('attendance_reports_cache');
         Schema::dropIfExists('attendance_logs');
-        Schema::dropIfExists('employee_shifts');
-        Schema::dropIfExists('shifts');
-        Schema::dropIfExists('employees');
-        Schema::dropIfExists('devices');
-        Schema::dropIfExists('branches');
-        Schema::dropIfExists('orgs');
+        Schema::dropIfExists('attendance_employee_shifts');
+        Schema::dropIfExists('attendance_shifts');
+        Schema::dropIfExists('attendance_devices');
+        Schema::dropIfExists('attendance_employees');
     }
 };

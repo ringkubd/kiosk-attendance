@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiosk\AttendanceSync\Models;
+namespace Anwar\AttendanceSync\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
@@ -12,19 +12,22 @@ class AttendanceLog extends Model
 
     protected $fillable = [
         'id',
-        'org_id',
-        'branch_id',
+        'attendance_employee_id',
         'device_id',
-        'employee_id',
         'type',
-        'ts_local',
-        'confidence',
-        'synced',
-        'server_id',
-        'created_at',
+        'check_time',
+        'branch_id',
+        'confidence_score',
+        'location_lat',
+        'location_lng',
+        'photo_proof_path',
+        'notes',
+        'sync_status',
+        'synced_from_device_at',
     ];
 
     protected $casts = [
-        'created_at' => 'datetime',
+        'check_time' => 'datetime',
+        'synced_from_device_at' => 'datetime',
     ];
 }

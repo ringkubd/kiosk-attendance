@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiosk\AttendanceSync\Jobs;
+namespace Anwar\AttendanceSync\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;

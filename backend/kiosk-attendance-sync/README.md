@@ -15,7 +15,7 @@ Laravel 10 package for syncing kiosk attendance data with multi-tenant support (
 From your Laravel app:
 
 ```bash
-composer require kiosk/attendance-sync
+composer require anwar/attendance-sync
 ```
 
 If this is a local path:
@@ -32,7 +32,7 @@ If this is a local path:
 Then:
 
 ```bash
-composer require kiosk/attendance-sync:*@dev
+composer require anwar/attendance-sync:*@dev
 ```
 
 ## Publish Config + Migrations

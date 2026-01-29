@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiosk\AttendanceSync\Providers;
+namespace Anwar\AttendanceSync\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Route;
@@ -29,22 +29,7 @@ class AttendanceSyncServiceProvider extends ServiceProvider
 
     private function registerRoutes(): void
     {
-        Route::middleware($this->resolveAuthMiddleware())
+        Route::middleware(['api', \Anwar\AttendanceSync\Http\Middleware\DeviceAuth::class])
             ->group(__DIR__ . '/../../routes/api.php');
-    }
-
-    private function resolveAuthMiddleware(): array
-    {
-        $driver = config('kiosk.auth.driver', 'sanctum');
-
-        if ($driver === 'sanctum') {
-            return ['api', 'auth:sanctum'];
-        }
-
-        if ($driver === 'jwt') {
-            return ['api', 'auth:api'];
-        }
-
-        return ['api', \Kiosk\AttendanceSync\Http\Middleware\DeviceTokenAuth::class];
     }
 }

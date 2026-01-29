@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiosk\AttendanceSync\Http\Requests;
+namespace Anwar\AttendanceSync\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 

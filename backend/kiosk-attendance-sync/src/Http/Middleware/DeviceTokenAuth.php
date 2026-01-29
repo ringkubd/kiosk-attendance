@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiosk\AttendanceSync\Http\Middleware;
+namespace Anwar\AttendanceSync\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;

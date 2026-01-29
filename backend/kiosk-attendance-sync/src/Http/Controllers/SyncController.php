@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiosk\AttendanceSync\Http\Controllers;
+namespace Anwar\AttendanceSync\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Kiosk\AttendanceSync\Http\Requests\SyncLogsRequest;
-use Kiosk\AttendanceSync\Http\Requests\SyncEmployeesRequest;
-use Kiosk\AttendanceSync\Jobs\ComputeDailySummaryJob;
-use Kiosk\AttendanceSync\Models\AttendanceLog;
-use Kiosk\AttendanceSync\Models\Employee;
+use Anwar\AttendanceSync\Http\Requests\SyncLogsRequest;
+use Anwar\AttendanceSync\Http\Requests\SyncEmployeesRequest;
+use Anwar\AttendanceSync\Jobs\ComputeDailySummaryJob;
+use Anwar\AttendanceSync\Models\AttendanceLog;
+use Anwar\AttendanceSync\Models\Employee;
 
 class SyncController
 {

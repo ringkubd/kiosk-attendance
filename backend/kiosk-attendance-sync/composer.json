@@ -1,17 +1,17 @@
 {
-  "name": "kiosk/attendance-sync",
+  "name": "anwar/attendance-sync",
   "description": "Kiosk attendance sync package for Laravel 10",
   "type": "library",
   "license": "MIT",
   "autoload": {
     "psr-4": {
-      "Kiosk\\AttendanceSync\\": "src/"
+      "Anwar\\AttendanceSync\\": "src/"
     }
   },
   "extra": {
     "laravel": {
       "providers": [
-        "Kiosk\\AttendanceSync\\Providers\\AttendanceSyncServiceProvider"
+        "Anwar\\AttendanceSync\\Providers\\AttendanceSyncServiceProvider"
       ]
     }
   },
