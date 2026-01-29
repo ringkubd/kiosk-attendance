@@ -2,51 +2,64 @@
 import { useIsFocused } from "@react-navigation/native";
 import { router } from "expo-router";
 import * as Speech from "expo-speech";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AppState,
-  type AppStateStatus,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  Vibration,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Camera as VisionCamera,
-  useCameraDevice,
-  useCameraPermission,
-} from "react-native-vision-camera";
-import {
-  Camera as FaceDetectorCamera,
-  type Face,
-  type FaceDetectionOptions,
-} from "react-native-vision-camera-face-detector";
-import { Button, Card } from "../components/common";
-import { detectFace } from "../ml/faceDetection";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import
+  {
+    AppState,
+    StyleSheet,
+    TouchableOpacity,
+    Vibration,
+    View,
+    type AppStateStatus,
+  } from "react-native";
+import
+  {
+    Camera as VisionCamera,
+    useCameraDevice,
+    useCameraPermission,
+  } from "react-native-vision-camera";
+import
+  {
+    Camera as FaceDetectorCamera,
+    type Face,
+    type FaceDetectionOptions,
+  } from "react-native-vision-camera-face-detector";
+import { detectFace, type DetectedFace } from "../ml/faceDetection";
 import { recognizeFaceWithDetection } from "../ml/faceRecognition";
-import {
-  generateChallenge,
-  processLivenessFrame,
-  resetLiveness,
-} from "../ml/liveness";
-import { DuplicateAttendanceError, logAttendance } from "../services/attendance";
+import
+  {
+    generateChallenge,
+    processLivenessFrame,
+    resetLiveness,
+  } from "../ml/liveness";
+import
+  {
+    DuplicateAttendanceError,
+    logAttendance,
+  } from "../services/attendance";
 import { getSettings } from "../services/settings";
+import
+  {
+    FaceGuideOverlay,
+    ResultCard,
+    StatusBanner,
+    type KioskStatus,
+  } from "../src/components/kiosk";
+import { Button } from "../src/components/ui/Button";
+import { Text } from "../src/components/ui/Text";
+import { colors, radii, spacing } from "../src/ui";
+import { CameraOverlayLayout } from "../src/ui/layout/CameraOverlayLayout";
+import { Screen } from "../src/ui/layout/Screen";
 import type { LivenessChallenge } from "../types";
-import {
-  ERROR_COLOR,
-  PRIMARY_COLOR,
-  RECOGNITION_THRESHOLD,
-  SUCCESS_COLOR,
-  SURFACE_COLOR,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-} from "../utils/constants";
+import { RECOGNITION_THRESHOLD } from "../utils/constants";
 import { formatTime } from "../utils/helpers";
 import { Logger } from "../utils/logger";
-import { colors, radii, spacing, typography } from "../ui/theme";
 
 type KioskState = "READY" | "PROCESSING" | "SUCCESS" | "FAIL" | "LIVENESS";
 
@@ -79,6 +92,8 @@ export default function KioskScreen() {
   const lastFocusAt = useRef(0);
   const focusInFlight = useRef(false);
   const lastSpoken = useRef<{ msg: string; at: number }>({ msg: "", at: 0 });
+  const latestLiveFace = useRef<Face | null>(null);
+  const latestLiveFaceAt = useRef(0);
   const [faceBox, setFaceBox] = useState<{
     x: number;
     y: number;
@@ -230,8 +245,13 @@ export default function KioskScreen() {
 
       if (!faces || faces.length === 0) {
         if (faceBox) setFaceBox(null);
+        latestLiveFace.current = null;
+        latestLiveFaceAt.current = 0;
         return;
       }
+
+      latestLiveFace.current = faces[0];
+      latestLiveFaceAt.current = now;
 
       const box = extractFaceBox(faces[0]);
       if (!box) return;
@@ -239,7 +259,11 @@ export default function KioskScreen() {
       setFaceBox(box);
 
       const supportsFocus = (device as any)?.supportsFocus;
-      if (!camera.current || supportsFocus === false || state === "PROCESSING") {
+      if (
+        !camera.current ||
+        supportsFocus === false ||
+        state === "PROCESSING"
+      ) {
         return;
       }
 
@@ -264,14 +288,7 @@ export default function KioskScreen() {
           focusInFlight.current = false;
         });
     },
-    [
-      device,
-      extractFaceBox,
-      faceBox,
-      state,
-      viewSize.height,
-      viewSize.width,
-    ],
+    [device, extractFaceBox, faceBox, state, viewSize.height, viewSize.width],
   );
 
   const handleCapture = async () => {
@@ -328,29 +345,21 @@ export default function KioskScreen() {
       await delay(200);
 
       let livenessPassed = false;
-      const maxAttempts = 6; // Faster liveness loop
-      const frameDelay = 150; // ms between captures
+      const livenessTimeoutMs = 1500;
+      const targetFrameIntervalMs = 110; // <=120ms sampling target
+      const livenessStart = Date.now();
+      let frameIndex = 0;
 
-      for (let i = 0; i < maxAttempts; i++) {
-        await delay(frameDelay);
+      while (Date.now() - livenessStart < livenessTimeoutMs) {
+        const loopStart = Date.now();
+        frameIndex += 1;
 
-        if (!camera.current) break;
+        const liveFace = latestLiveFace.current;
+        const liveFaceAge = Date.now() - latestLiveFaceAt.current;
 
-        const frame = await camera.current.takePhoto({
-          flash: "off",
-          enableShutterSound: false,
-        });
-
-        const frameDetection = await detectFace(frame.path, {
-          classificationMode: "all",
-          landmarkMode: "all",
-          performanceMode: "fast",
-        });
-
-        if (frameDetection.detected && frameDetection.face) {
-          const { passed, progress } = processLivenessFrame(
-            frameDetection.face,
-          );
+        if (liveFace && liveFaceAge <= 220) {
+          const detectedFace = mapLiveFaceToDetected(liveFace);
+          const { passed, progress } = processLivenessFrame(detectedFace);
 
           // Update message with progress
           if (progress > 0 && progress < 100) {
@@ -366,7 +375,13 @@ export default function KioskScreen() {
           }
         } else {
           // Face lost during challenge
-          logger.warn(`Frame ${i + 1}: Face not detected`);
+          logger.warn(`Frame ${frameIndex}: Live face not detected`);
+        }
+
+        const elapsed = Date.now() - loopStart;
+        const remaining = targetFrameIntervalMs - elapsed;
+        if (remaining > 0) {
+          await delay(remaining);
         }
       }
 
@@ -445,258 +460,192 @@ export default function KioskScreen() {
     }
   };
 
-  const getStatusColor = () => {
+  const getKioskStatus = (): KioskStatus => {
     switch (state) {
       case "SUCCESS":
-        return SUCCESS_COLOR;
+        return "SUCCESS";
       case "FAIL":
-        return ERROR_COLOR;
+        return "FAILED";
       case "PROCESSING":
       case "LIVENESS":
-        return PRIMARY_COLOR;
+        return "SCANNING";
       default:
-        return "#757575";
+        return "READY";
     }
   };
 
   if (!hasPermission) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.permissionText}>Camera permission required</Text>
-        <Button title="Grant Permission" onPress={requestPermission} />
-      </View>
+      <Screen variant="fixed" padding="lg" background="default">
+        <View style={styles.permissionContainer}>
+          <Text variant="Admin/H2">Camera permission required</Text>
+          <Button title="Grant Permission" onPress={requestPermission} />
+        </View>
+      </Screen>
     );
   }
 
   if (!device) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.permissionText}>No camera device found</Text>
-      </View>
+      <Screen variant="fixed" padding="lg" background="default">
+        <View style={styles.permissionContainer}>
+          <Text variant="Admin/H2">No camera device found</Text>
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView
-      style={styles.container}
-      onLayout={(event) => {
-        const { width, height } = event.nativeEvent.layout;
-        if (width !== viewSize.width || height !== viewSize.height) {
-          setViewSize({ width, height });
-        }
-      }}
+    <Screen
+      variant="fixed"
+      padding="none"
+      background="default"
+      statusBarStyle="light-content"
+      applyInsets={false}
     >
-      <StatusBar barStyle="light-content" />
-      <FaceDetectorCamera
-        ref={camera}
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={cameraActive}
-        photo={true}
-        faceDetectionCallback={handleFacesDetected}
-        faceDetectionOptions={faceDetectionOptions}
-      />
-
-      <View style={styles.overlay}>
-        {faceBox ? (
-          <View
-            style={[
-              styles.faceTracker,
-              {
-                left: faceBox.x,
-                top: faceBox.y,
-                width: faceBox.width,
-                height: faceBox.height,
-              },
-            ]}
-          />
-        ) : (
-          <View style={styles.faceBorder} />
-        )}
-      </View>
-
-      {/* Status Banner */}
       <View
-        style={[styles.statusBanner, { backgroundColor: getStatusColor() }]}
+        style={styles.container}
+        onLayout={(event) => {
+          const { width, height } = event.nativeEvent.layout;
+          if (width !== viewSize.width || height !== viewSize.height) {
+            setViewSize({ width, height });
+          }
+        }}
       >
-        <Text style={styles.statusText}>{message}</Text>
+        <FaceDetectorCamera
+          ref={camera}
+          style={StyleSheet.absoluteFill}
+          device={device}
+          isActive={cameraActive}
+          photo={true}
+          faceDetectionCallback={handleFacesDetected}
+          faceDetectionOptions={faceDetectionOptions}
+        />
+
+        <CameraOverlayLayout
+          topSlot={<StatusBanner status={getKioskStatus()} message={message} />}
+          centerSlot={
+            faceBox ? (
+              <View
+                style={[
+                  styles.faceTracker,
+                  {
+                    left: faceBox.x,
+                    top: faceBox.y,
+                    width: faceBox.width,
+                    height: faceBox.height,
+                  },
+                ]}
+              />
+            ) : (
+              <FaceGuideOverlay />
+            )
+          }
+          bottomSlot={
+            <View style={styles.bottomContainer}>
+              {result && state === "SUCCESS" ? (
+                <ResultCard
+                  name={result.employeeName}
+                  type={result.type}
+                  time={formatTime(result.timestamp)}
+                />
+              ) : null}
+
+              <TouchableOpacity
+                style={[
+                  styles.captureButton,
+                  processing && styles.captureButtonDisabled,
+                ]}
+                onPress={handleCapture}
+                disabled={processing}
+              >
+                <View style={styles.captureButtonInner} />
+              </TouchableOpacity>
+
+              <Button
+                title="Admin"
+                variant="secondary"
+                onPress={() => router.push("/admin-login")}
+              />
+            </View>
+          }
+        />
       </View>
-
-      {/* Result Card */}
-      {result && state === "SUCCESS" && (
-        <View style={styles.resultContainer}>
-          <Card style={styles.resultCard}>
-            <Text style={styles.resultName}>{result.employeeName}</Text>
-            <Text style={styles.resultType}>{result.type}</Text>
-            <Text style={styles.resultTime}>
-              {formatTime(result.timestamp)}
-            </Text>
-            <Text style={styles.resultConfidence}>
-              Confidence: {(result.confidence * 100).toFixed(1)}%
-            </Text>
-          </Card>
-        </View>
-      )}
-
-      {/* Capture Button */}
-      <View style={styles.bottomContainer}>
-        <TouchableOpacity
-          style={[
-            styles.captureButton,
-            processing && styles.captureButtonDisabled,
-          ]}
-          onPress={handleCapture}
-          disabled={processing}
-        >
-          <View style={styles.captureButtonInner} />
-        </TouchableOpacity>
-
-        {/* Admin Access */}
-        <TouchableOpacity
-          style={styles.adminButton}
-          onPress={() => router.push("/admin-login")}
-        >
-          <Text style={styles.adminButtonText}>Admin</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
+
+const mapLiveFaceToDetected = (face: Face): DetectedFace => ({
+  bounds: {
+    x: face.bounds.x,
+    y: face.bounds.y,
+    width: face.bounds.width,
+    height: face.bounds.height,
+  },
+  leftEyeOpenProbability: face.leftEyeOpenProbability,
+  rightEyeOpenProbability: face.rightEyeOpenProbability,
+  headEulerAngleY: face.yawAngle,
+  headEulerAngleZ: face.rollAngle,
+  landmarks: face.landmarks
+    ? {
+        leftEye: face.landmarks.LEFT_EYE
+          ? { x: face.landmarks.LEFT_EYE.x, y: face.landmarks.LEFT_EYE.y }
+          : undefined,
+        rightEye: face.landmarks.RIGHT_EYE
+          ? { x: face.landmarks.RIGHT_EYE.x, y: face.landmarks.RIGHT_EYE.y }
+          : undefined,
+        nose: face.landmarks.NOSE_BASE
+          ? { x: face.landmarks.NOSE_BASE.x, y: face.landmarks.NOSE_BASE.y }
+          : undefined,
+        mouth: face.landmarks.MOUTH_BOTTOM
+          ? { x: face.landmarks.MOUTH_BOTTOM.x, y: face.landmarks.MOUTH_BOTTOM.y }
+          : undefined,
+      }
+    : undefined,
+});
+
+const CAPTURE_SIZE = 84;
+const CAPTURE_INNER_SIZE = 64;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0B1220",
+    backgroundColor: colors.bg.default,
   },
-  permissionText: {
-    fontSize: typography.bodyLarge,
-    color: colors.textSecondary,
-    textAlign: "center",
-    marginBottom: spacing.xl,
-    fontFamily: typography.fontFamilyMedium,
-  },
-  statusBanner: {
-    position: "absolute",
-    top: spacing.md,
-    left: spacing.md,
-    right: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.md,
-    zIndex: 10,
-    borderRadius: radii.lg,
-    shadowColor: "#0B1220",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 5,
-  },
-  statusText: {
-    color: "#FFFFFF",
-    fontSize: typography.body,
-    fontWeight: "700",
-    textAlign: "center",
-    fontFamily: typography.fontFamilyBold,
-  },
-  resultContainer: {
-    position: "absolute",
-    top: 110,
-    left: spacing.md,
-    right: spacing.md,
-    zIndex: 20,
-  },
-  resultCard: {
+  permissionContainer: {
+    flex: 1,
     alignItems: "center",
-    backgroundColor: SURFACE_COLOR,
-    borderRadius: radii.lg,
-  },
-  resultName: {
-    fontSize: typography.h1,
-    fontWeight: "800",
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-    fontFamily: typography.fontFamilyBold,
-  },
-  resultType: {
-    fontSize: typography.h2,
-    fontWeight: "700",
-    color: PRIMARY_COLOR,
-    marginBottom: spacing.sm,
-    fontFamily: typography.fontFamilyBold,
-  },
-  resultTime: {
-    fontSize: typography.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-    fontFamily: typography.fontFamily,
-  },
-  resultConfidence: {
-    fontSize: typography.caption,
-    color: "#94A3B8",
-    fontFamily: typography.fontFamily,
+    justifyContent: "center",
+    gap: spacing.md,
   },
   bottomContainer: {
-    position: "absolute",
-    bottom: spacing.xl + 12,
-    left: 0,
-    right: 0,
+    width: "100%",
     alignItems: "center",
+    gap: spacing.md,
   },
   captureButton: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: SURFACE_COLOR,
+    width: CAPTURE_SIZE,
+    height: CAPTURE_SIZE,
+    borderRadius: CAPTURE_SIZE / 2,
+    backgroundColor: colors.bg.surface,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 4,
-    borderColor: PRIMARY_COLOR,
-    shadowColor: "#0B1220",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
+    borderWidth: 3,
+    borderColor: colors.brand.primary,
   },
   captureButtonDisabled: {
     opacity: 0.5,
   },
   captureButtonInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: PRIMARY_COLOR,
-  },
-  adminButton: {
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    backgroundColor: "rgba(15, 23, 42, 0.75)",
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  adminButtonText: {
-    color: "#FFFFFF",
-    fontSize: typography.body,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-    fontFamily: typography.fontFamilyMedium,
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  faceBorder: {
-    width: 260,
-    height: 260,
-    borderWidth: 3,
-    borderColor: PRIMARY_COLOR,
-    borderRadius: 130,
+    width: CAPTURE_INNER_SIZE,
+    height: CAPTURE_INNER_SIZE,
+    borderRadius: CAPTURE_INNER_SIZE / 2,
+    backgroundColor: colors.brand.primary,
   },
   faceTracker: {
     position: "absolute",
-    borderWidth: 3,
-    borderColor: PRIMARY_COLOR,
-    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: colors.brand.primary,
+    borderRadius: radii.lg,
   },
 });

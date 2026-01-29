@@ -1,20 +1,14 @@
 // Admin Login Screen
 import { router } from "expo-router";
 import React, { useState } from "react";
-import
-  {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
-  } from "react-native";
-import { Button, Card } from "../components/common";
+import { Alert, StyleSheet, View } from "react-native";
+import { Button } from "../src/components/ui/Button";
+import { Card } from "../src/components/ui/Card";
+import { Input } from "../src/components/ui/Input";
+import { AppHeader } from "../src/ui/layout/AppHeader";
+import { Screen } from "../src/ui/layout/Screen";
+import { colors, spacing } from "../src/ui";
 import { verifyAdminPin } from "../services/settings";
-import { BACKGROUND_COLOR } from "../utils/constants";
-import { colors, radii, spacing, typography } from "../ui/theme";
 
 export default function AdminLoginScreen() {
   const [pin, setPin] = useState("");
@@ -45,17 +39,16 @@ export default function AdminLoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
+    <Screen variant="fixed" padding="sm" background="default" keyboardSafe>
+      <AppHeader
+        title="Admin Login"
+        subtitle="Enter your PIN"
+        showBack
+        onBack={() => router.back()}
+      />
       <View style={styles.content}>
         <Card style={styles.card}>
-          <Text style={styles.title}>Admin Access</Text>
-          <Text style={styles.subtitle}>Enter your PIN to continue</Text>
-
-          <TextInput
-            style={styles.input}
+          <Input
             value={pin}
             onChangeText={setPin}
             placeholder="Enter PIN"
@@ -63,6 +56,7 @@ export default function AdminLoginScreen() {
             secureTextEntry
             maxLength={6}
             autoFocus
+            style={styles.pinInput}
           />
 
           <Button
@@ -70,67 +64,33 @@ export default function AdminLoginScreen() {
             onPress={handleLogin}
             loading={loading}
             disabled={pin.length < 4}
-            style={styles.button}
           />
 
           <Button
             title="Back to Kiosk"
             onPress={() => router.back()}
             variant="secondary"
-            style={styles.backButton}
           />
         </Card>
       </View>
-    </KeyboardAvoidingView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BACKGROUND_COLOR,
-  },
   content: {
     flex: 1,
     justifyContent: "center",
-    padding: 20,
   },
   card: {
-    padding: spacing.xl,
-    borderRadius: radii.xl,
+    gap: spacing.md,
+    backgroundColor: colors.bg.surface,
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: 420,
   },
-  title: {
-    fontSize: typography.h1,
-    fontWeight: "800",
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
+  pinInput: {
     textAlign: "center",
-    fontFamily: typography.fontFamilyBold,
-  },
-  subtitle: {
-    fontSize: typography.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.xxl,
-    textAlign: "center",
-    fontFamily: typography.fontFamily,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "rgba(30, 136, 229, 0.25)",
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: typography.bodyLarge,
-    marginBottom: spacing.xl,
-    textAlign: "center",
-    letterSpacing: 8,
-    backgroundColor: colors.surface,
-    fontFamily: typography.fontFamilyMedium,
-  },
-  button: {
-    marginBottom: 12,
-  },
-  backButton: {
-    marginTop: 8,
+    letterSpacing: spacing.sm,
   },
 });

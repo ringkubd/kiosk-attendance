@@ -159,7 +159,6 @@ dependencies {
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
-    def hermesEnabled = (findProperty('react.native.new.architecture') ?: "") != "true";
 
     if (isGifEnabled) {
         // For animated gif support

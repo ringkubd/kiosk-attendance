@@ -5,6 +5,7 @@ import { Asset } from "expo-asset";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import "react-native-worklets";
 import { MobileFaceNetModel } from "../assets/modelAssets";
 import { initializeApp } from "../services/appInit";
@@ -50,50 +51,21 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          animation: "slide_from_right",
-        }}
-      >
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="admin-login"
-          options={{
-            headerShown: true,
-            title: "Admin Login",
-            headerBackTitle: "Back",
+      <SafeAreaProvider>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            animation: "slide_from_right",
           }}
-        />
-        <Stack.Screen
-          name="employees"
-          options={{
-            headerShown: true,
-            title: "Employees",
-          }}
-        />
-        <Stack.Screen
-          name="enroll"
-          options={{
-            headerShown: true,
-            title: "Enroll Employee",
-          }}
-        />
-        <Stack.Screen
-          name="reports"
-          options={{
-            headerShown: true,
-            title: "Reports",
-          }}
-        />
-        <Stack.Screen
-          name="settings"
-          options={{
-            headerShown: true,
-            title: "Settings",
-          }}
-        />
-      </Stack>
+        >
+          <Stack.Screen name="index" />
+          <Stack.Screen name="admin-login" />
+          <Stack.Screen name="employees" />
+          <Stack.Screen name="enroll" />
+          <Stack.Screen name="reports" />
+          <Stack.Screen name="settings" />
+        </Stack>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

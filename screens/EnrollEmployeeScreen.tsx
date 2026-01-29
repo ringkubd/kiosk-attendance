@@ -1,12 +1,17 @@
 // Enroll Employee Screen
 import { useIsFocused } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import
   {
     Alert,
     AppState,
-    type AppStateStatus,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -15,18 +20,21 @@ import
     TextInput,
     View,
     useWindowDimensions,
+    type AppStateStatus,
   } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Camera as VisionCamera,
-  useCameraDevice,
-  useCameraPermission,
-} from "react-native-vision-camera";
-import {
-  Camera as FaceDetectorCamera,
-  type Face,
-  type FaceDetectionOptions,
-} from "react-native-vision-camera-face-detector";
+import
+  {
+    Camera as VisionCamera,
+    useCameraDevice,
+    useCameraPermission,
+  } from "react-native-vision-camera";
+import
+  {
+    Camera as FaceDetectorCamera,
+    type Face,
+    type FaceDetectionOptions,
+  } from "react-native-vision-camera-face-detector";
 import { Button, Card, SectionHeader } from "../components/common";
 import { getAllActiveEmployees, insertEmployee } from "../db/database";
 import { detectFaces, validateFaceQuality } from "../ml/faceDetection";
@@ -38,15 +46,16 @@ import
   } from "../ml/onnxInference";
 import { preprocessImage } from "../ml/preprocessor";
 import { getActiveOrgBranchIds } from "../services/settings";
-import {
-  BACKGROUND_COLOR,
-  BORDER_COLOR,
-  ENROLL_DUPLICATE_THRESHOLD,
-  PRIMARY_COLOR,
-  SUCCESS_COLOR,
-  SURFACE_COLOR,
-} from "../utils/constants";
 import { colors, radii, spacing, typography } from "../ui/theme";
+import
+  {
+    BACKGROUND_COLOR,
+    BORDER_COLOR,
+    ENROLL_DUPLICATE_THRESHOLD,
+    PRIMARY_COLOR,
+    SUCCESS_COLOR,
+    SURFACE_COLOR,
+  } from "../utils/constants";
 import
   {
     averageEmbeddings,
@@ -291,17 +300,17 @@ export default function EnrollEmployeeScreen() {
       }
 
       // Duplicate check: captured samples for this enrollment
-      for (const sample of samples) {
-        if (sample.length !== embedding.length) continue;
-        const similarity = cosineSimilarity(embedding, sample);
-        if (similarity >= ENROLL_DUPLICATE_THRESHOLD) {
-          Alert.alert(
-            "Duplicate Sample",
-            "This sample is too similar to a previous capture. Please capture a new angle.",
-          );
-          return;
-        }
-      }
+      // for (const sample of samples) {
+      //   if (sample.length !== embedding.length) continue;
+      //   const similarity = cosineSimilarity(embedding, sample);
+      //   if (similarity >= ENROLL_DUPLICATE_THRESHOLD) {
+      //     Alert.alert(
+      //       "Duplicate Sample",
+      //       "This sample is too similar to a previous capture. Please capture a new angle.",
+      //     );
+      //     return;
+      //   }
+      // }
 
       // Add to samples
       setSamples((prev) => [...prev, embedding]);

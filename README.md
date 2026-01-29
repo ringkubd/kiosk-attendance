@@ -102,3 +102,36 @@ See its README for setup.
 ## License
 
 MIT (if you want a different license, tell me).
+
+## Design System (UI Kit)
+
+Use tokens from `src/ui` and UI primitives from `src/components/ui` for consistent kiosk + admin screens.
+
+Text variants:
+- Kiosk: `Kiosk/H1`, `Kiosk/H2`, `Kiosk/Body`
+- Admin: `Admin/H1`, `Admin/H2`, `Admin/Body`, `Admin/Caption`
+
+Example:
+```tsx
+import { Text } from "../src/components/ui/Text";
+
+<Text variant="Admin/H2">Employees</Text>
+```
+
+Colors:
+- Use `colors.brand.*`, `colors.bg.*`, and `colors.status.*` from `src/ui/tokens.ts`.
+
+Status chips:
+- `P` = Present
+- `A` = Absent
+- `LI` = Late In
+- `LO` = Late Out
+- `NL` = No Logout
+- `INFO` = Info
+
+Example:
+```tsx
+import { StatusChip } from "../src/components/ui/StatusChip";
+
+<StatusChip code="P" />
+```

@@ -1,36 +1,36 @@
 // Employee List Screen
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import
-  {
-    Alert,
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-  } from "react-native";
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { Button, Card, SectionHeader, StatusBadge } from "../components/common";
-import
-  {
-    deleteEmployee,
-    getAllEmployees,
-    updateEmployee,
-  } from "../db/database";
+import {
+  deleteEmployee,
+  getAllEmployees,
+  updateEmployee,
+} from "../db/database";
 import { getActiveOrgBranchIds } from "../services/settings";
 import type { Employee } from "../types";
-import {
-  BACKGROUND_COLOR,
-  BORDER_COLOR,
-  ERROR_COLOR,
-  SURFACE_COLOR,
-} from "../utils/constants";
-import { colors, radii, spacing, typography } from "../ui/theme";
+import { Button } from "../src/components/ui/Button";
+import { Input } from "../src/components/ui/Input";
+import { StatusChip } from "../src/components/ui/StatusChip";
+import { Text } from "../src/components/ui/Text";
+import { AppHeader } from "../src/ui/layout/AppHeader";
+import { BottomBar } from "../src/ui/layout/BottomBar";
+import { Screen } from "../src/ui/layout/Screen";
+import { colors, radii, spacing } from "../src/ui";
 
 export default function EmployeeListScreen() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     loadEmployees();
@@ -86,213 +86,160 @@ export default function EmployeeListScreen() {
     }
   };
 
+  const filteredEmployees = employees.filter((employee) => {
+    if (!search.trim()) return true;
+    const term = search.trim().toLowerCase();
+    return (
+      employee.name.toLowerCase().includes(term) ||
+      (employee.code || "").toLowerCase().includes(term)
+    );
+  });
+
   const renderEmployee = ({ item }: { item: Employee }) => (
-    <Card style={styles.employeeCard}>
-      <View style={styles.employeeHeader}>
-        <View style={styles.employeeInfo}>
-          <Text style={styles.employeeName}>{item.name}</Text>
-          {item.code && (
-            <Text style={styles.employeeCode}>Code: {item.code}</Text>
-          )}
-          <StatusBadge
-            label={item.status === "active" ? "Active" : "Inactive"}
-            tone={item.status === "active" ? "success" : "warning"}
-            style={styles.employeeStatusBadge}
-          />
-        </View>
+    <View style={styles.employeeRow}>
+      <View style={styles.employeeInfo}>
+        <Text variant="Admin/H2">{item.name}</Text>
+        {item.code ? (
+          <Text variant="Admin/Caption" color={colors.text.secondary}>
+            Code: {item.code}
+          </Text>
+        ) : null}
       </View>
-
+      <StatusChip
+        code={item.status === "active" ? "P" : "A"}
+        label={item.status === "active" ? "Active" : "Inactive"}
+      />
       <View style={styles.employeeActions}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.toggleButton]}
+        <Button
+          title={item.status === "active" ? "Disable" : "Enable"}
           onPress={() => handleToggleStatus(item)}
-        >
-          <Text style={styles.actionButtonText}>
-            {item.status === "active" ? "Disable" : "Enable"}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionButton, styles.deleteButton]}
+          variant="secondary"
+          style={styles.actionButton}
+        />
+        <Button
+          title="Delete"
           onPress={() => handleDelete(item)}
-        >
-          <Text style={[styles.actionButtonText, { color: "#FFFFFF" }]}>
-            Delete
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </Card>
-  );
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <SectionHeader
-          title="Employees"
-          subtitle={`Total: ${employees.length}`}
-          style={styles.headerText}
-        />
-        <Button
-          title="Enroll New"
-          onPress={() => router.push("/enroll")}
-          style={styles.enrollButton}
-        />
-      </View>
-
-      {loading ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Loading...</Text>
-        </View>
-      ) : employees.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No employees enrolled</Text>
-          <Button
-            title="Enroll First Employee"
-            onPress={() => router.push("/enroll")}
-            style={styles.emptyButton}
-          />
-        </View>
-      ) : (
-        <FlatList
-          data={employees}
-          renderItem={renderEmployee}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-        />
-      )}
-
-      <View style={styles.footer}>
-        <Button
-          title="Reports"
-          onPress={() => router.push("/reports")}
-          variant="secondary"
-          style={styles.footerButton}
-        />
-        <Button
-          title="Settings"
-          onPress={() => router.push("/settings")}
-          variant="secondary"
-          style={styles.footerButton}
+          variant="danger"
+          style={styles.actionButton}
         />
       </View>
     </View>
   );
+
+  return (
+    <Screen variant="fixed" padding="md" background="default">
+      <AppHeader
+        title="Employees"
+        subtitle={`Total: ${employees.length}`}
+        showBack
+        onBack={() => router.back()}
+      />
+      <View style={styles.content}>
+        <Button
+          title="Enroll New"
+          onPress={() => router.push("/enroll")}
+          variant="primary"
+        />
+        <Input
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search by name or code"
+        />
+        {loading ? (
+          <View style={styles.emptyContainer}>
+            <Text variant="Admin/Body">Loading...</Text>
+          </View>
+        ) : filteredEmployees.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text variant="Admin/Body">No employees found</Text>
+            <Button
+              title="Enroll First Employee"
+              onPress={() => router.push("/enroll")}
+              variant="primary"
+            />
+          </View>
+        ) : (
+          <FlatList
+            data={filteredEmployees}
+            renderItem={renderEmployee}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.list}
+          />
+        )}
+      </View>
+      <BottomBar>
+        <View style={styles.footer}>
+          <Button
+            title="Reports"
+            onPress={() => router.push("/reports")}
+            variant="secondary"
+          />
+          <Button
+            title="Settings"
+            onPress={() => router.push("/settings")}
+            variant="secondary"
+          />
+        </View>
+      </BottomBar>
+      <Pressable
+        style={[styles.fab, { bottom: insets.bottom + spacing.xl }]}
+        onPress={() => router.push("/enroll")}
+      >
+        <Text variant="Admin/H2" color={colors.text.inverse}>
+          +
+        </Text>
+      </Pressable>
+    </Screen>
+  );
 }
 
+const FAB_SIZE = spacing.xxl + spacing.sm;
+
 const styles = StyleSheet.create({
-  container: {
+  content: {
     flex: 1,
-    backgroundColor: BACKGROUND_COLOR,
-  },
-  header: {
-    padding: spacing.lg,
-    backgroundColor: SURFACE_COLOR,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     gap: spacing.md,
-    flexWrap: "wrap", // allow wrapping on narrow portrait screens
-  },
-  headerText: {
-    flex: 1,
-    minWidth: 180, // keep title readable on narrow devices
-  },
-  enrollButton: {
-    minWidth: 160,
-    alignSelf: "flex-end",
   },
   list: {
-    padding: spacing.lg,
-  },
-  employeeCard: {
-    marginBottom: spacing.md,
-  },
-  employeeHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: spacing.sm,
-    alignItems: "center",
-    gap: spacing.sm,
-    flexWrap: "wrap",
-  },
-  employeeInfo: {
-    flex: 1,
-    minWidth: 120,
-  },
-  employeeName: {
-    fontSize: typography.h3,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 4,
-    fontFamily: typography.fontFamilyBold,
-  },
-  employeeCode: {
-    fontSize: typography.caption,
-    color: colors.textSecondary,
-    marginBottom: 6,
-    fontFamily: typography.fontFamily,
-  },
-  employeeStatusBadge: {
-    marginTop: 4,
-  },
-  employeeActions: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    flexWrap: "wrap", // wrap buttons to next line on narrow screens
-    alignItems: "center",
-  },
-  actionButton: {
-    flex: 1,
-    minWidth: 140, // makes actions stack nicely on portrait
+    gap: spacing.md,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+  },
+  employeeRow: {
+    backgroundColor: colors.bg.surface,
     borderRadius: radii.md,
-    alignItems: "center",
+    padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: spacing.sm,
   },
-  toggleButton: {
-    backgroundColor: colors.surface,
+  employeeInfo: {
+    gap: spacing.xs,
   },
-  deleteButton: {
-    backgroundColor: ERROR_COLOR,
-    borderColor: ERROR_COLOR,
+  employeeActions: {
+    flexDirection: "column",
+    gap: spacing.sm,
   },
-  actionButtonText: {
-    fontSize: typography.caption,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamilyBold,
+  actionButton: {
+    width: "100%",
   },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: spacing.xxl,
-  },
-  emptyText: {
-    fontSize: typography.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.xl,
-    textAlign: "center",
-    fontFamily: typography.fontFamilyMedium,
-  },
-  emptyButton: {
-    minWidth: 200,
+    gap: spacing.md,
   },
   footer: {
     flexDirection: "row",
-    padding: spacing.lg,
-    backgroundColor: SURFACE_COLOR,
-    borderTopWidth: 1,
-    borderTopColor: BORDER_COLOR,
     gap: spacing.sm,
-    flexWrap: "wrap", // allow buttons to stack on portrait
   },
-  footerButton: {
-    flex: 1,
-    minWidth: 140,
+  fab: {
+    position: "absolute",
+    right: spacing.lg,
+    backgroundColor: colors.brand.primary,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

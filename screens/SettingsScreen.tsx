@@ -1,16 +1,14 @@
 // Settings Screen
 import React, { useEffect, useState } from "react";
-import
-  {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    View,
-  } from "react-native";
-import { Button, Card } from "../components/common";
+import { router } from "expo-router";
+import { Alert, StyleSheet, Switch, View } from "react-native";
+import { Button } from "../src/components/ui/Button";
+import { Card } from "../src/components/ui/Card";
+import { Input } from "../src/components/ui/Input";
+import { Text } from "../src/components/ui/Text";
+import { AppHeader } from "../src/ui/layout/AppHeader";
+import { Screen } from "../src/ui/layout/Screen";
+import { colors, spacing } from "../src/ui";
 import {
   getSettings,
   regenerateDeviceId,
@@ -20,13 +18,6 @@ import {
   updateSyncInterval,
   updateThreshold,
 } from "../services/settings";
-import {
-  BACKGROUND_COLOR,
-  BORDER_COLOR,
-  PRIMARY_COLOR,
-  SURFACE_COLOR,
-} from "../utils/constants";
-import { colors, radii, spacing, typography } from "../ui/theme";
 
 export default function SettingsScreen() {
   const [threshold, setThreshold] = useState("0.55");
@@ -56,7 +47,6 @@ export default function SettingsScreen() {
   };
 
   const handleSave = async () => {
-    // Validate threshold
     const thresholdNum = parseFloat(threshold);
     if (isNaN(thresholdNum) || thresholdNum < 0.3 || thresholdNum > 0.8) {
       Alert.alert("Error", "Threshold must be between 0.30 and 0.80");
@@ -64,11 +54,7 @@ export default function SettingsScreen() {
     }
 
     const syncIntervalNum = parseInt(syncInterval, 10);
-    if (
-      isNaN(syncIntervalNum) ||
-      syncIntervalNum < 1 ||
-      syncIntervalNum > 1440
-    ) {
+    if (isNaN(syncIntervalNum) || syncIntervalNum < 1 || syncIntervalNum > 1440) {
       Alert.alert("Error", "Sync interval must be between 1 and 1440 minutes");
       return;
     }
@@ -115,18 +101,20 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Recognition Settings */}
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Recognition Settings</Text>
+    <Screen variant="scroll" padding="md" background="default" keyboardSafe>
+      <AppHeader
+        title="Settings"
+        subtitle="Device and attendance"
+        showBack
+        onBack={() => router.back()}
+      />
 
-        <View style={styles.setting}>
-          <Text style={styles.label}>Recognition Threshold</Text>
-          <Text style={styles.hint}>
-            Higher values = stricter matching (0.30 - 0.80)
-          </Text>
-          <TextInput
-            style={styles.input}
+      <Card>
+        <View style={styles.section}>
+          <Text variant="Admin/H2">Recognition</Text>
+          <Input
+            label="Recognition Threshold"
+            helperText="Higher values = stricter matching (0.30 - 0.80)"
             value={threshold}
             onChangeText={setThreshold}
             keyboardType="numeric"
@@ -135,66 +123,55 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
-      {/* Device Settings */}
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Device Settings</Text>
-
-        <View style={styles.setting}>
-          <Text style={styles.label}>Device ID</Text>
-          <Text style={styles.hint}>Unique identifier for this device</Text>
-          <Text style={styles.deviceId}>{deviceId}</Text>
+      <Card>
+        <View style={styles.section}>
+          <Text variant="Admin/H2">Device</Text>
+          <Text variant="Admin/Caption" color={colors.text.secondary}>
+            Device ID
+          </Text>
+          <Text variant="Admin/Body" color={colors.brand.primary}>
+            {deviceId}
+          </Text>
+          <Button
+            title="Regenerate Device ID"
+            onPress={async () => {
+              const newId = await regenerateDeviceId();
+              setDeviceId(newId);
+              Alert.alert("Success", "Device ID regenerated");
+            }}
+            variant="secondary"
+          />
         </View>
-
-        <Button
-          title="Regenerate Device ID"
-          onPress={async () => {
-            const newId = await regenerateDeviceId();
-            setDeviceId(newId);
-            Alert.alert("Success", "Device ID regenerated");
-          }}
-          variant="secondary"
-          style={styles.regenerateButton}
-        />
       </Card>
 
-      {/* Sync Settings */}
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Sync Settings</Text>
-
-        <View style={styles.setting}>
+      <Card>
+        <View style={styles.section}>
+          <Text variant="Admin/H2">Sync</Text>
           <View style={styles.switchRow}>
-            <View style={styles.switchLabel}>
-              <Text style={styles.label}>Enable Sync</Text>
-              <Text style={styles.hint}>Sync data with backend server</Text>
+            <View style={styles.switchText}>
+              <Text variant="Admin/Body">Enable Sync</Text>
+              <Text variant="Admin/Caption" color={colors.text.secondary}>
+                Sync data with backend server
+              </Text>
             </View>
             <Switch
               value={syncEnabled}
               onValueChange={setSyncEnabled}
-              trackColor={{ false: "#E0E0E0", true: PRIMARY_COLOR }}
+              trackColor={{ false: colors.border, true: colors.brand.primary }}
             />
           </View>
-        </View>
-
-        <View style={styles.setting}>
-          <Text style={styles.label}>API Base URL</Text>
-          <Text style={styles.hint}>Leave empty to disable sync</Text>
-          <TextInput
-            style={styles.input}
+          <Input
+            label="API Base URL"
+            helperText="Leave empty to disable sync"
             value={apiUrl}
             onChangeText={setApiUrl}
             placeholder="https://api.example.com"
             autoCapitalize="none"
             keyboardType="url"
           />
-        </View>
-
-        <View style={styles.setting}>
-          <Text style={styles.label}>Sync Interval (minutes)</Text>
-          <Text style={styles.hint}>
-            How often to sync when enabled (1 - 1440)
-          </Text>
-          <TextInput
-            style={styles.input}
+          <Input
+            label="Sync Interval (minutes)"
+            helperText="How often to sync when enabled (1 - 1440)"
             value={syncInterval}
             onChangeText={setSyncInterval}
             placeholder="15"
@@ -203,14 +180,11 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
-      {/* Admin PIN */}
-      <Card style={styles.section}>
-        <Text style={styles.sectionTitle}>Admin PIN</Text>
-
-        <View style={styles.setting}>
-          <Text style={styles.label}>New PIN</Text>
-          <TextInput
-            style={styles.input}
+      <Card>
+        <View style={styles.section}>
+          <Text variant="Admin/H2">Admin PIN</Text>
+          <Input
+            label="New PIN"
             value={newPin}
             onChangeText={setNewPin}
             placeholder="Enter new PIN"
@@ -218,12 +192,8 @@ export default function SettingsScreen() {
             secureTextEntry
             maxLength={6}
           />
-        </View>
-
-        <View style={styles.setting}>
-          <Text style={styles.label}>Confirm PIN</Text>
-          <TextInput
-            style={styles.input}
+          <Input
+            label="Confirm PIN"
             value={confirmPin}
             onChangeText={setConfirmPin}
             placeholder="Confirm new PIN"
@@ -231,98 +201,37 @@ export default function SettingsScreen() {
             secureTextEntry
             maxLength={6}
           />
+          <Button
+            title="Change PIN"
+            onPress={handleChangePin}
+            disabled={!newPin || !confirmPin}
+            variant="secondary"
+          />
         </View>
-
-        <Button
-          title="Change PIN"
-          onPress={handleChangePin}
-          disabled={!newPin || !confirmPin}
-          variant="secondary"
-          style={styles.changePinButton}
-        />
       </Card>
 
-      {/* Save Button */}
       <Button
         title="Save Settings"
         onPress={handleSave}
         loading={saving}
-        style={styles.saveButton}
       />
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BACKGROUND_COLOR,
-  },
-  content: {
-    padding: spacing.lg,
-  },
   section: {
-    marginBottom: spacing.lg,
-    padding: spacing.lg,
-    backgroundColor: SURFACE_COLOR,
-  },
-  sectionTitle: {
-    fontSize: typography.h3,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-    fontFamily: typography.fontFamilyBold,
-  },
-  setting: {
-    marginBottom: spacing.md,
-  },
-  label: {
-    fontSize: typography.caption,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 4,
-    fontFamily: typography.fontFamilyMedium,
-  },
-  hint: {
-    fontSize: typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-    fontFamily: typography.fontFamily,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: BORDER_COLOR,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: typography.body,
-    backgroundColor: SURFACE_COLOR,
-    fontFamily: typography.fontFamily,
-  },
-  deviceId: {
-    fontSize: typography.caption,
-    color: colors.primary,
-    fontFamily: "monospace",
-    backgroundColor: BACKGROUND_COLOR,
-    padding: spacing.sm,
-    borderRadius: radii.sm,
+    gap: spacing.md,
   },
   switchRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    marginVertical: spacing.sm,
   },
-  switchLabel: {
+  switchText: {
     flex: 1,
-    marginRight: spacing.md,
-  },
-  changePinButton: {
-    marginTop: spacing.sm,
-  },
-  regenerateButton: {
-    marginTop: spacing.sm,
-  },
-  saveButton: {
-    marginBottom: spacing.xxl,
+    gap: spacing.xs,
   },
 });

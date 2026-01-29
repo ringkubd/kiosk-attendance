@@ -3,35 +3,33 @@ import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
   Modal,
+  Pressable,
+  ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
   View,
-  useWindowDimensions,
 } from "react-native";
-import { Button, SectionHeader, StatusBadge } from "../components/common";
-import { ScrollableTable } from "../components/ScrollableTable";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getAllEmployees,
   getAttendanceLogsWithEmployeeByDateRange,
 } from "../db/database";
 import { getActiveOrgBranchIds } from "../services/settings";
 import type { AttendanceLogWithEmployee } from "../types";
-import { colors, radii, spacing, typography } from "../ui/theme";
-import {
-  BACKGROUND_COLOR,
-  BORDER_COLOR,
-  SECONDARY_COLOR,
-  SURFACE_COLOR,
-  TEXT_SECONDARY,
-} from "../utils/constants";
 import { formatDate, formatTime, getTodayStart } from "../utils/helpers";
+import { Button } from "../src/components/ui/Button";
+import { Input } from "../src/components/ui/Input";
+import { TableRow } from "../src/components/ui/TableRow";
+import { Text } from "../src/components/ui/Text";
+import { AppHeader } from "../src/ui/layout/AppHeader";
+import { BottomBar } from "../src/ui/layout/BottomBar";
+import { Screen } from "../src/ui/layout/Screen";
+import { colors, radii, spacing } from "../src/ui";
 
 type DateFilter = "today" | "week" | "month" | "all";
 
@@ -47,6 +45,7 @@ export default function ReportsScreen() {
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
+  const insets = useSafeAreaInsets();
 
 
   const getRange = () => {
@@ -683,24 +682,6 @@ export default function ReportsScreen() {
     return logs.filter((log) => log.employee_id === employeeFilter);
   }, [logs, employeeFilter]);
 
-  const { width, height } = useWindowDimensions();
-  const isCompactLandscape = width > height && width < 900;
-  const tableHeight = Math.max(
-    220,
-    Math.min(420, height - (isCompactLandscape ? 300 : 360)),
-  );
-
-  const tableColumns = useMemo(() => {
-    const cols: any[] = [
-      { key: "employee_name", title: "Name", flex: 2.2 },
-    ];
-    if (showDate) cols.push({ key: "date", title: "Date", width: 120 });
-    cols.push({ key: "in_time", title: "In Time", width: 110, align: "center" });
-    cols.push({ key: "out_time", title: "Out Time", width: 110, align: "center" });
-    cols.push({ key: "status", title: "Status", width: 110, align: "right" });
-    return cols;
-  }, [showDate]);
-
   // Group logs by employee and day to show only first IN and last OUT
   interface DailySummary {
     id: string;
@@ -755,114 +736,103 @@ export default function ReportsScreen() {
     return Array.from(summaryMap.values()).sort((a, b) => b.ts_local - a.ts_local);
   }, [filteredLogs]);
 
-  const renderRow = (item: DailySummary) => (
-    <View style={styles.tableRow}>
-      <Text style={[styles.cell, styles.cellName]} numberOfLines={1}>
-        {item.employee_name}
-      </Text>
-      {showDate && (
-        <Text style={[styles.cell, styles.cellDate]}>
-          {formatDate(item.ts_local)}
-        </Text>
-      )}
-      <Text style={[styles.cell, styles.cellTime]}>
-        {item.in_time ? formatTime(item.in_time) : "—"}
-      </Text>
-      <Text style={[styles.cell, styles.cellTime]}>
-        {item.out_time ? formatTime(item.out_time) : "—"}
-      </Text>
-      <View style={styles.cellStatusWrap}>
-        <StatusBadge label={item.status.label} tone={item.status.tone as any} />
-      </View>
-    </View>
-  );
-
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <SectionHeader
-          title="Attendance Reports"
-          subtitle={`Total: ${getDailySummaries.length} days`}
-        />
-      </View>
-
-      {/* Filter Buttons */}
-      <View style={styles.filterContainer}>
-        {(["today", "week", "month", "all"] as DateFilter[]).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[
-              styles.filterButton,
-              filter === f && styles.filterButtonActive,
-            ]}
-            onPress={() => setFilter(f)}
-          >
-            <Text
+    <Screen variant="fixed" padding="md" background="default">
+      <AppHeader
+        title="Attendance Reports"
+        subtitle={`Total: ${getDailySummaries.length} days`}
+        showBack
+        onBack={() => router.back()}
+      />
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + spacing.md },
+        ]}
+      >
+        <View style={styles.filterContainer}>
+          {(["today", "week", "month", "all"] as DateFilter[]).map((f) => (
+            <Pressable
+              key={f}
               style={[
-                styles.filterText,
-                filter === f && styles.filterTextActive,
+                styles.filterButton,
+                filter === f && styles.filterButtonActive,
               ]}
+              onPress={() => setFilter(f)}
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
+              <Text
+                variant="Admin/Caption"
+                color={
+                  filter === f ? colors.text.inverse : colors.text.secondary
+                }
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.employeeFilterContainer}>
+          <Text variant="Admin/Caption">Filter by employee</Text>
+          <Pressable
+            style={styles.employeePicker}
+            onPress={() => setShowEmployeePicker(true)}
+          >
+            <Text variant="Admin/Body" numberOfLines={1}>
+              {selectedEmployeeLabel}
             </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={styles.employeeFilterContainer}>
-        <Text style={styles.employeeFilterLabel}>Filter by employee</Text>
-        <TouchableOpacity
-          style={styles.employeePicker}
-          onPress={() => setShowEmployeePicker(true)}
-        >
-          <Text style={styles.employeePickerText} numberOfLines={1}>
-            {selectedEmployeeLabel}
-          </Text>
-          <Text style={styles.employeePickerChevron}>▾</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Loading...</Text>
+            <Text variant="Admin/Body">▾</Text>
+          </Pressable>
         </View>
-      ) : getDailySummaries.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No attendance logs found</Text>
-        </View>
-      ) : (
-        <View style={styles.tableWrapper}>
-          <ScrollableTable
-            columns={tableColumns}
-            data={getDailySummaries}
-            keyExtractor={(item) => item.id}
-            renderRow={renderRow}
-            height={tableHeight}
-            horizontal={filter === "month"}
-            style={{ marginHorizontal: 16 }}
-          />
-        </View>
-      )}
 
-      <View style={styles.footer}>
-        <View style={styles.footerButtonsContainer}>
+        {loading ? (
+          <View style={styles.emptyContainer}>
+            <Text variant="Admin/Body">Loading...</Text>
+          </View>
+        ) : getDailySummaries.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text variant="Admin/Body">No attendance logs found</Text>
+          </View>
+        ) : (
+          <View style={styles.tableWrapper}>
+            {getDailySummaries.map((item) => (
+              <TableRow
+                key={item.id}
+                name={item.employee_name}
+                date={showDate ? formatDate(item.ts_local) : "—"}
+                inOut={`${item.in_time ? formatTime(item.in_time) : "—"} / ${
+                  item.out_time ? formatTime(item.out_time) : "—"
+                }`}
+                status={
+                  item.status.label === "P"
+                    ? "P"
+                    : item.status.label === "AB"
+                      ? "A"
+                      : "NL"
+                }
+              />
+            ))}
+          </View>
+        )}
+      </ScrollView>
+
+      <BottomBar>
+        <View style={styles.footer}>
           <Button
             title="Print / PDF"
             onPress={handlePrint}
             loading={printing}
             disabled={logs.length === 0 || printing || exporting}
             variant="secondary"
-            style={styles.footerButton}
           />
           <Button
             title="Export CSV"
             onPress={handleExportCSV}
             loading={exporting}
             disabled={logs.length === 0 || exporting || printing}
-            style={styles.footerButton}
           />
         </View>
-      </View>
+      </BottomBar>
 
       <Modal
         visible={showEmployeePicker}
@@ -872,46 +842,30 @@ export default function ReportsScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Select employee</Text>
-            <View style={styles.searchBox}>
-              <Text style={styles.searchIcon}>🔍</Text>
-              <TextInput
-                style={styles.searchInput}
-                value={employeeSearch}
-                onChangeText={setEmployeeSearch}
-                placeholder="Search by name"
-                placeholderTextColor={TEXT_SECONDARY}
-              />
-            </View>
+            <Text variant="Admin/H2">Select employee</Text>
+            <Input
+              value={employeeSearch}
+              onChangeText={setEmployeeSearch}
+              placeholder="Search by name"
+            />
             <View style={styles.modalListContainer}>
               <FlatList
-                data={[
-                  { id: "all", name: "All employees" },
-                  ...filteredEmployeeOptions,
-                ]}
+                data={
+                  [{ id: "all", name: "All employees" }, ...filteredEmployeeOptions]
+                }
                 keyExtractor={(item) => item.id}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[
-                      styles.modalRow,
-                      employeeFilter === item.id && styles.modalRowActive,
-                    ]}
+                  <Pressable
+                    style={styles.modalRow}
                     onPress={() => {
                       setEmployeeFilter(item.id);
                       setEmployeeSearch("");
                       setShowEmployeePicker(false);
                     }}
                   >
-                    <Text
-                      style={[
-                        styles.modalRowText,
-                        employeeFilter === item.id && styles.modalRowTextActive,
-                      ]}
-                    >
-                      {item.name}
-                    </Text>
-                  </TouchableOpacity>
+                    <Text variant="Admin/Body">{item.name}</Text>
+                  </Pressable>
                 )}
               />
             </View>
@@ -919,29 +873,21 @@ export default function ReportsScreen() {
               title="Close"
               variant="secondary"
               onPress={() => setShowEmployeePicker(false)}
-              style={styles.modalCloseButton}
             />
           </View>
         </View>
       </Modal>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  content: {
     flex: 1,
-    backgroundColor: BACKGROUND_COLOR,
-  },
-  header: {
-    padding: spacing.lg,
-    backgroundColor: SURFACE_COLOR,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
+    gap: spacing.md,
   },
   filterContainer: {
     flexDirection: "row",
-    padding: spacing.md,
     gap: spacing.sm,
     flexWrap: "wrap",
   },
@@ -950,206 +896,60 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radii.md,
-    backgroundColor: SURFACE_COLOR,
+    backgroundColor: colors.bg.surface,
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: colors.border,
     alignItems: "center",
   },
   filterButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  filterText: {
-    fontSize: typography.caption,
-    fontWeight: "700",
-    color: colors.textSecondary,
-    fontFamily: typography.fontFamilyMedium,
-  },
-  filterTextActive: {
-    color: "#FFFFFF",
-  },
-  list: {
-    padding: spacing.md,
-  },
-  tableContainer: {
-    marginHorizontal: spacing.md,
-    marginTop: 4,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: BORDER_COLOR,
-    backgroundColor: SURFACE_COLOR,
-    overflow: "hidden",
-  },
-  tableWrapper: {
-    marginTop: 8,
-  },
-  tableHeader: {
-    flexDirection: "row",
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    backgroundColor: "#F1F5F9",
-  },
-  tableRow: {
-    flexDirection: "row",
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
-  },
-  headerCell: {
-    fontSize: typography.caption,
-    fontWeight: "700",
-    color: colors.textSecondary,
-    fontFamily: typography.fontFamilyMedium,
-  },
-  cell: {
-    fontSize: typography.caption,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily,
-  },
-  cellName: {
-    flex: 2.2,
-  },
-  cellType: {
-    flex: 0.9,
-    textAlign: "center",
-  },
-  cellDate: {
-    flex: 1.4,
-    textAlign: "center",
-  },
-  cellTime: {
-    flex: 1.2,
-    textAlign: "center",
-  },
-  cellStatus: {
-    flex: 1.2,
-    textAlign: "right",
-    fontFamily: typography.fontFamilyMedium,
-  },
-  cellStatusWrap: {
-    flex: 1.2,
-    alignItems: "flex-end",
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.xxl,
-  },
-  emptyText: {
-    fontSize: typography.body,
-    color: colors.textSecondary,
-    textAlign: "center",
-    fontFamily: typography.fontFamilyMedium,
+    backgroundColor: colors.brand.primary,
+    borderColor: colors.brand.primary,
   },
   employeeFilterContainer: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  employeeFilterLabel: {
-    fontSize: typography.caption,
-    color: colors.textSecondary,
-    fontFamily: typography.fontFamilyMedium,
-    marginBottom: spacing.sm,
+    gap: spacing.xs,
   },
   employeePicker: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
+    alignItems: "center",
     paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
-    backgroundColor: SURFACE_COLOR,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.surface,
   },
-  employeePickerText: {
+  tableWrapper: {
+    gap: spacing.sm,
+  },
+  emptyContainer: {
     flex: 1,
-    color: colors.textPrimary,
-    fontSize: typography.caption,
-    fontFamily: typography.fontFamilyMedium,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
   },
-  employeePickerChevron: {
-    color: colors.textSecondary,
-    marginLeft: spacing.sm,
+  footer: {
+    flexDirection: "row",
+    gap: spacing.sm,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
     justifyContent: "center",
     padding: spacing.lg,
   },
   modalCard: {
-    backgroundColor: SURFACE_COLOR,
+    backgroundColor: colors.bg.surface,
     borderRadius: radii.lg,
-    padding: spacing.md,
-    maxHeight: "80%",
-    borderWidth: 1,
-    borderColor: BORDER_COLOR,
-  },
-  modalTitle: {
-    fontSize: typography.h3,
-    fontWeight: "800",
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-    fontFamily: typography.fontFamilyBold,
-  },
-  searchBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: BORDER_COLOR,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: BACKGROUND_COLOR,
-  },
-  searchIcon: {
-    marginRight: spacing.sm,
-  },
-  searchInput: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   modalListContainer: {
-    marginTop: spacing.md,
-    maxHeight: 300,
+    maxHeight: 360,
   },
   modalRow: {
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
-  },
-  modalRowActive: {
-    backgroundColor: SECONDARY_COLOR,
-  },
-  modalRowText: {
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamilyMedium,
-  },
-  modalRowTextActive: {
-    color: colors.primary,
-  },
-  modalCloseButton: {
-    marginTop: spacing.sm,
-  },
-  footer: {
-    padding: spacing.md,
-    backgroundColor: SURFACE_COLOR,
-    borderTopWidth: 1,
-    borderTopColor: BORDER_COLOR,
-  },
-  footerButtonsContainer: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  footerButton: {
-    flex: 1,
-  },
-  exportButton: {
-    width: "100%",
+    borderBottomColor: colors.border,
   },
 });
