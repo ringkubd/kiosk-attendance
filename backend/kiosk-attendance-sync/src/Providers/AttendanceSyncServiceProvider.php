@@ -10,6 +10,7 @@ class AttendanceSyncServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../../config/kiosk.php', 'kiosk');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/attendance-sync.php', 'attendance-sync');
     }
 
     public function boot(): void
@@ -22,6 +23,10 @@ class AttendanceSyncServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__ . '/../../database/migrations' => database_path('migrations'),
             ], 'kiosk-migrations');
+
+            $this->publishes([
+                __DIR__ . '/../../config/attendance-sync.php' => config_path('attendance-sync.php'),
+            ], 'attendance-sync-config');
         }
 
         $this->registerRoutes();

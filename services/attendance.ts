@@ -14,7 +14,8 @@ import {
   getStartOfDay,
 } from "../utils/helpers";
 import { Logger } from "../utils/logger";
-import { getActiveOrgBranchIds, getDeviceId } from "./settings";
+import { getActiveOrgBranchIds, getDeviceId, getSettings } from "./settings";
+import { syncService } from "./sync";
 
 const logger = new Logger("Attendance");
 
@@ -83,6 +84,8 @@ export async function logAttendance(
       ts_local: timestamp,
       confidence,
       server_id: null,
+      server_log_id: null,
+      sync_confirmed: 0,
       created_at: timestamp,
     });
 
@@ -92,6 +95,15 @@ export async function logAttendance(
     logger.info(
       `Logged ${type} for ${employeeName} at ${new Date(timestamp).toLocaleString()}`,
     );
+
+    try {
+      const settings = await getSettings();
+      if (settings.sync_enabled && settings.attendance_immediate_sync) {
+        await syncService.syncAttendanceLogsNow();
+      }
+    } catch (syncError: any) {
+      logger.warn("Immediate attendance sync skipped", syncError);
+    }
 
     return {
       employeeId,

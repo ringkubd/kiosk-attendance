@@ -1,5 +1,8 @@
 // Face recognition service - detection, preprocessing, inference, and matching
-import { getAllActiveEmployees } from "../db/database";
+import {
+  getAllActiveEmployees,
+  getAllActiveEmployeesUnfiltered,
+} from "../db/database";
 import type { RecognitionResult } from "../types";
 import { RECOGNITION_THRESHOLD } from "../utils/constants";
 import { cosineSimilarity } from "../utils/helpers";
@@ -92,7 +95,13 @@ class FaceRecognitionService {
 
     // Match against active employees
     const { orgId, branchId } = await getActiveOrgBranchIds();
-    const employees = await getAllActiveEmployees(orgId, branchId);
+    let employees = await getAllActiveEmployees(orgId, branchId);
+    if (employees.length === 0) {
+      logger.warn(
+        "No active employees in current org/branch; falling back to unfiltered list",
+      );
+      employees = await getAllActiveEmployeesUnfiltered();
+    }
     if (employees.length === 0) {
       logger.warn("No active employees in database");
       return null;

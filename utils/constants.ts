@@ -1,9 +1,9 @@
 // Constants
-export const PRIMARY_COLOR = "#1E88E5";
-export const PRIMARY_GRADIENT_START = "#1E88E5";
-export const PRIMARY_GRADIENT_END = "#42A5F5";
+export const PRIMARY_COLOR = "#CE4631";
+export const PRIMARY_GRADIENT_START = "#CE4631";
+export const PRIMARY_GRADIENT_END = "#E56551";
 export const ACCENT_COLOR = "#F57C00";
-export const SECONDARY_COLOR = "#E3F2FD";
+export const SECONDARY_COLOR = "#FCE8E5";
 export const TEXT_PRIMARY = "#0F172A";
 export const TEXT_SECONDARY = "#64748B";
 export const ERROR_COLOR = "#DC2626";
@@ -28,7 +28,7 @@ export const LIVENESS_TIMEOUT_MS = 6000;
 
 // Database
 export const DB_NAME = "kiosk_attendance.db";
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 // Attendance
 export const DUPLICATE_WINDOW_SECONDS = 120;

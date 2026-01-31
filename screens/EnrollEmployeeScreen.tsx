@@ -1,6 +1,6 @@
 // Enroll Employee Screen
 import { useIsFocused } from "@react-navigation/native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -36,7 +36,12 @@ import
     type FaceDetectionOptions,
   } from "react-native-vision-camera-face-detector";
 import { Button, Card, SectionHeader } from "../components/common";
-import { getAllActiveEmployees, insertEmployee } from "../db/database";
+import {
+  getAllActiveEmployees,
+  getEmployeeById,
+  insertEmployee,
+  updateEmployee,
+} from "../db/database";
 import { detectFaces, validateFaceQuality } from "../ml/faceDetection";
 import
   {
@@ -45,7 +50,9 @@ import
     runInference,
   } from "../ml/onnxInference";
 import { preprocessImage } from "../ml/preprocessor";
-import { getActiveOrgBranchIds } from "../services/settings";
+import { getActiveOrgBranchIds, getSettings } from "../services/settings";
+import { syncService } from "../services/sync";
+import type { Employee } from "../types";
 import { colors, radii, spacing, typography } from "../ui/theme";
 import
   {
@@ -60,13 +67,21 @@ import
   {
     averageEmbeddings,
     cosineSimilarity,
+    float32ArrayToBase64,
     generateId,
   } from "../utils/helpers";
 import { Logger } from "../utils/logger";
+import { encryptEmbeddingsPayload } from "../utils/encryption";
 
 const REQUIRED_SAMPLES = 3;
 
 export default function EnrollEmployeeScreen() {
+  const params = useLocalSearchParams<{ employeeId?: string }>();
+  const employeeIdParam =
+    typeof params.employeeId === "string" ? params.employeeId : undefined;
+  const [existingEmployee, setExistingEmployee] = useState<Employee | null>(
+    null,
+  );
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [samples, setSamples] = useState<Float32Array[]>([]);
@@ -96,6 +111,28 @@ export default function EnrollEmployeeScreen() {
   const isTablet = Math.max(width, height) >= 900;
   const isLandscapeLayout = isLandscape && isTablet;
   const cameraActive = isFocused && appState === "active";
+
+  useEffect(() => {
+    if (!employeeIdParam) return;
+    let mounted = true;
+    (async () => {
+      const employee = await getEmployeeById(employeeIdParam);
+      if (!employee) {
+        Alert.alert("Error", "Employee not found");
+        router.back();
+        return;
+      }
+      if (!mounted) return;
+      setExistingEmployee(employee);
+      setName(employee.name);
+      setCode(employee.code || "");
+    })().catch((error) => {
+      Logger.error("Failed to load employee for enrollment", error);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [employeeIdParam]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
@@ -284,9 +321,15 @@ export default function EnrollEmployeeScreen() {
       const embedding = await runInference(inputTensor);
 
       // Duplicate check: already enrolled employees
-      const { orgId, branchId } = await getActiveOrgBranchIds();
+      const { orgId, branchId } = existingEmployee
+        ? {
+            orgId: existingEmployee.org_id,
+            branchId: existingEmployee.branch_id,
+          }
+        : await getActiveOrgBranchIds();
       const existingEmployees = await getAllActiveEmployees(orgId, branchId);
       for (const employee of existingEmployees) {
+        if (employeeIdParam && employee.id === employeeIdParam) continue;
         if (!employee.embedding_avg) continue;
         if (employee.embedding_avg.length !== embedding.length) continue;
         const similarity = cosineSimilarity(embedding, employee.embedding_avg);
@@ -343,6 +386,10 @@ export default function EnrollEmployeeScreen() {
   };
 
   const handleSave = async () => {
+    if (employeeIdParam && !existingEmployee) {
+      Alert.alert("Error", "Employee data not loaded yet");
+      return;
+    }
     if (!name.trim()) {
       Alert.alert("Error", "Please enter employee name");
       return;
@@ -355,55 +402,98 @@ export default function EnrollEmployeeScreen() {
 
     setSaving(true);
     try {
-      // Check for duplicate by name or code
-      const { orgId, branchId } = await getActiveOrgBranchIds();
-      const existingEmployees = await getAllActiveEmployees(orgId, branchId);
-      const trimmedName = name.trim().toLowerCase();
-      const trimmedCode = code.trim();
-
-      for (const emp of existingEmployees) {
-        if (emp.name.toLowerCase() === trimmedName) {
-          Alert.alert(
-            "Duplicate Name",
-            `An employee named "${name}" already exists.`,
-          );
-          setSaving(false);
-          return;
-        }
-        if (
-          trimmedCode &&
-          emp.code?.toLowerCase() === trimmedCode.toLowerCase()
-        ) {
-          Alert.alert(
-            "Duplicate Code",
-            `An employee with code "${code}" already exists.`,
-          );
-          setSaving(false);
-          return;
-        }
+      let orgId: string;
+      let branchId: string;
+      if (existingEmployee) {
+        orgId = existingEmployee.org_id;
+        branchId = existingEmployee.branch_id;
+      } else {
+        const context = await getActiveOrgBranchIds();
+        orgId = context.orgId;
+        branchId = context.branchId;
       }
 
       // Calculate average embedding
       const avgEmbedding = averageEmbeddings(samples);
 
-      // Create employee
-      const employeeId = generateId();
-      await insertEmployee({
-        id: employeeId,
-        org_id: orgId,
-        branch_id: branchId,
-        name: name.trim(),
-        code: code.trim() || undefined,
-        embedding_avg: avgEmbedding,
-        status: "active",
-      });
+      // Create or update employee
+      const employeeId = existingEmployee?.id || generateId();
+      const embeddingsBase64 = float32ArrayToBase64(avgEmbedding);
+      if (existingEmployee) {
+        await updateEmployee(employeeId, {
+          embedding_avg: avgEmbedding,
+          embeddings_json: embeddingsBase64,
+        });
+      } else {
+        // Check for duplicate by name or code
+        const existingEmployees = await getAllActiveEmployees(orgId, branchId);
+        const trimmedName = name.trim().toLowerCase();
+        const trimmedCode = code.trim();
 
-      Alert.alert("Success", `${name} enrolled successfully!`, [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ]);
+        for (const emp of existingEmployees) {
+          if (emp.name.toLowerCase() === trimmedName) {
+            Alert.alert(
+              "Duplicate Name",
+              `An employee named "${name}" already exists.`,
+            );
+            setSaving(false);
+            return;
+          }
+          if (
+            trimmedCode &&
+            emp.code?.toLowerCase() === trimmedCode.toLowerCase()
+          ) {
+            Alert.alert(
+              "Duplicate Code",
+              `An employee with code "${code}" already exists.`,
+            );
+            setSaving(false);
+            return;
+          }
+        }
+
+        await insertEmployee({
+          id: employeeId,
+          org_id: orgId,
+          branch_id: branchId,
+          name: name.trim(),
+          code: code.trim() || undefined,
+          embedding_avg: avgEmbedding,
+          embeddings_json: embeddingsBase64,
+          status: "active",
+        });
+      }
+
+      let syncWarning: string | null = null;
+      try {
+        const settings = await getSettings();
+        if (settings.sync_enabled && settings.api_base_url) {
+          const encrypted = await encryptEmbeddingsPayload(
+            embeddingsBase64,
+            settings.device_token || null,
+          );
+          await syncService.pushFaceEnrollment(
+            settings.api_base_url,
+            employeeId,
+            encrypted,
+          );
+        }
+      } catch (syncError: any) {
+        syncWarning = "Face data saved locally but failed to sync.";
+        Logger.warn("Face enrollment sync failed", syncError);
+      }
+
+      const successName = existingEmployee ? existingEmployee.name : name;
+      Alert.alert(
+        "Success",
+        `${successName} enrolled successfully!${syncWarning ? `\n\n${syncWarning}` : ""}`,
+        [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ],
+      );
     } catch (error: any) {
       Logger.error("Employee enrollment failed:", error);
       Alert.alert("Error", "Failed to enroll employee. Please try again.");
@@ -461,7 +551,20 @@ export default function EnrollEmployeeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Card style={styles.formCard}>
-            <SectionHeader title="Enroll New Employee" />
+            <SectionHeader
+              title={
+                existingEmployee ? "Enroll Face Data" : "Enroll New Employee"
+              }
+            />
+            {existingEmployee ? (
+              <Text style={styles.helperText}>
+                {existingEmployee.embeddings_json ||
+                (existingEmployee.embedding_avg &&
+                  existingEmployee.embedding_avg.length > 0)
+                  ? "This will replace existing face data."
+                  : "No face data found. Capture samples to enroll."}
+              </Text>
+            ) : null}
 
             <TextInput
               style={styles.input}
@@ -469,6 +572,7 @@ export default function EnrollEmployeeScreen() {
               onChangeText={setName}
               placeholder="Employee Name *"
               autoCapitalize="words"
+              editable={!existingEmployee}
             />
 
             <TextInput
@@ -476,6 +580,7 @@ export default function EnrollEmployeeScreen() {
               value={code}
               onChangeText={setCode}
               placeholder="Employee Code (optional)"
+              editable={!existingEmployee}
             />
 
             <View style={styles.progressContainer}>
@@ -710,6 +815,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.md,
     textAlign: "center",
+    fontFamily: typography.fontFamilyMedium,
+  },
+  helperText: {
+    fontSize: typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
     fontFamily: typography.fontFamilyMedium,
   },
 });

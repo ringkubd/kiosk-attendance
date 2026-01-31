@@ -67,17 +67,15 @@
       "expo-asset",
       "expo-sqlite"
     ],
-    "assetBundlePatterns": [
-      "assets/models/*",
-      "assets/images/*"
-    ],
+    "assetBundlePatterns": ["assets/models/*", "assets/images/*"],
     "extra": {
       "router": {
         "appRoot": "app"
       },
       "eas": {
         "projectId": "b05b6192-ec62-442d-85ed-5aa2e85c4d32"
-      }
+      },
+      "apiBaseUrl": "https://beta-api.gunmahalalfood.com"
     },
     "experiments": {
       "typedRoutes": true,

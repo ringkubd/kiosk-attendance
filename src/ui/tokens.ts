@@ -1,8 +1,8 @@
 // Design tokens mapped to Figma styles
 export const colors = {
   brand: {
-    primary: "#1E88E5",
-    primaryLight: "#42A5F5",
+    primary: "#CE4631",
+    primaryLight: "#E56551",
     accent: "#F57C00",
   },
   bg: {

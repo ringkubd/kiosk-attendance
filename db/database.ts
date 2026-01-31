@@ -31,7 +31,9 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
         logger.info("Database opened successfully");
 
         await enqueueWrite(async () => {
-          await db!.execAsync("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;");
+          await db!.execAsync(
+            "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;",
+          );
         });
 
         await runMigrations(db);
@@ -122,6 +124,9 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
   }
   if (currentVersion < 2) {
     await migration_v2(database);
+  }
+  if (currentVersion < 3) {
+    await migration_v3(database);
   }
 
   // Add future migrations here
@@ -351,6 +356,32 @@ async function migration_v2(database: SQLite.SQLiteDatabase): Promise<void> {
   logger.info("Migration v2 completed");
 }
 
+async function migration_v3(database: SQLite.SQLiteDatabase): Promise<void> {
+  logger.info("Running migration v3");
+
+  await enqueueWrite(async () => {
+    await database.execAsync(`
+      ALTER TABLE employees ADD COLUMN user_id TEXT;
+      ALTER TABLE employees ADD COLUMN last_server_update INTEGER;
+
+      ALTER TABLE attendance_logs ADD COLUMN server_log_id TEXT;
+      ALTER TABLE attendance_logs ADD COLUMN sync_confirmed INTEGER DEFAULT 0;
+
+      ALTER TABLE shifts ADD COLUMN working_days TEXT;
+      ALTER TABLE shifts ADD COLUMN grace_period_minutes INTEGER DEFAULT 0;
+    `);
+  });
+
+  await enqueueWrite(async () => {
+    await database.runAsync(
+      "INSERT INTO migrations (version, applied_at) VALUES (?, ?)",
+      [3, Date.now()],
+    );
+  });
+
+  logger.info("Migration v3 completed");
+}
+
 // Employee CRUD operations
 export async function insertEmployee(
   employee: Omit<Employee, "updated_at" | "sync_state">,
@@ -362,17 +393,19 @@ export async function insertEmployee(
 
   await enqueueWrite(async () => {
     await db.runAsync(
-      `INSERT INTO employees (id, org_id, branch_id, code, name, status, embedding_avg, embeddings_json, updated_at, sync_state)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO employees (id, org_id, branch_id, user_id, code, name, status, embedding_avg, embeddings_json, last_server_update, updated_at, sync_state)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         employee.id,
         employee.org_id,
         employee.branch_id,
+        employee.user_id || null,
         employee.code || null,
         employee.name,
         employee.status,
         embeddingBlob,
         employee.embeddings_json || null,
+        employee.last_server_update || null,
         Date.now(),
         "dirty",
       ],
@@ -397,6 +430,10 @@ export async function updateEmployee(
     fields.push("branch_id = ?");
     values.push(updates.branch_id);
   }
+  if (updates.user_id !== undefined) {
+    fields.push("user_id = ?");
+    values.push(updates.user_id);
+  }
   if (updates.name !== undefined) {
     fields.push("name = ?");
     values.push(updates.name);
@@ -420,6 +457,10 @@ export async function updateEmployee(
   if (updates.embeddings_json !== undefined) {
     fields.push("embeddings_json = ?");
     values.push(updates.embeddings_json);
+  }
+  if (updates.last_server_update !== undefined) {
+    fields.push("last_server_update = ?");
+    values.push(updates.last_server_update);
   }
 
   fields.push("updated_at = ?", "sync_state = ?");
@@ -459,6 +500,15 @@ export async function getAllActiveEmployees(
   return results.map(rowToEmployee);
 }
 
+export async function getAllActiveEmployeesUnfiltered(): Promise<Employee[]> {
+  const db = getDatabase();
+  const results = await db.getAllAsync<any>(
+    "SELECT * FROM employees WHERE status = 'active' ORDER BY name",
+  );
+
+  return results.map(rowToEmployee);
+}
+
 export async function getAllEmployees(
   orgId: string,
   branchId: string,
@@ -468,6 +518,41 @@ export async function getAllEmployees(
     "SELECT * FROM employees WHERE org_id = ? AND branch_id = ? ORDER BY name",
     [orgId, branchId],
   );
+  logger.debug(
+    `[DB] getAllEmployees query: org_id="${orgId}", branch_id="${branchId}" -> returned ${results.length} employees`,
+  );
+
+  // Diagnostic: if no employees found, log all employees in DB to help debug
+  if (results.length === 0) {
+    try {
+      const allEmps = await db.getAllAsync<any>(
+        "SELECT id, org_id, branch_id, name FROM employees",
+      );
+      logger.warn(
+        `[DB] Diagnostic: Total employees in database: ${allEmps.length}. All org/branch combinations:`,
+        allEmps.map((e) => ({
+          org_id: e.org_id,
+          branch_id: e.branch_id,
+          name: e.name,
+        })),
+      );
+    } catch (diagError) {
+      logger.debug("[DB] Could not run diagnostic query", diagError);
+    }
+  }
+
+  return results.map(rowToEmployee);
+}
+
+export async function getAllEmployeesUnfiltered(): Promise<Employee[]> {
+  const db = getDatabase();
+  const results = await db.getAllAsync<any>(
+    "SELECT * FROM employees ORDER BY name",
+  );
+  logger.debug(
+    `[DB] getAllEmployeesUnfiltered query -> returned ${results.length} employees`,
+  );
+
   return results.map(rowToEmployee);
 }
 
@@ -494,11 +579,13 @@ function rowToEmployee(row: any): Employee {
     id: row.id,
     org_id: row.org_id,
     branch_id: row.branch_id,
+    user_id: row.user_id || undefined,
     name: row.name,
     code: row.code,
     status: row.status,
     embedding_avg: embedding,
     embeddings_json: row.embeddings_json,
+    last_server_update: row.last_server_update || undefined,
     updated_at: row.updated_at,
     sync_state: row.sync_state,
   };
@@ -513,8 +600,8 @@ export async function insertAttendanceLog(
 
   await enqueueWrite(async () => {
     await db.runAsync(
-      `INSERT INTO attendance_logs (id, org_id, branch_id, device_id, employee_id, type, ts_local, confidence, synced, server_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      `INSERT INTO attendance_logs (id, org_id, branch_id, device_id, employee_id, type, ts_local, confidence, synced, sync_confirmed, server_id, server_log_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
       [
         id,
         log.org_id,
@@ -525,6 +612,7 @@ export async function insertAttendanceLog(
         log.ts_local,
         log.confidence,
         log.server_id || null,
+        log.server_log_id || log.server_id || null,
         log.created_at || Date.now(),
       ],
     );
@@ -555,7 +643,9 @@ export async function getAttendanceLogsWithEmployeeByDateRange(
   endTs: number,
 ): Promise<(AttendanceLog & { employee_name: string })[]> {
   const db = getDatabase();
-  const results = await db.getAllAsync<AttendanceLog & { employee_name: string }>(
+  const results = await db.getAllAsync<
+    AttendanceLog & { employee_name: string }
+  >(
     `
     SELECT attendance_logs.*, employees.name as employee_name
     FROM attendance_logs
@@ -625,6 +715,189 @@ export async function markAttendanceLogsSynced(ids: string[]): Promise<void> {
     );
   });
   logger.info(`Marked ${ids.length} logs as synced`);
+}
+
+export async function updateAttendanceLogsServerInfo(
+  updates: {
+    id: string;
+    server_log_id?: string | null;
+    sync_confirmed?: number;
+  }[],
+): Promise<void> {
+  if (updates.length === 0) return;
+  const db = getDatabase();
+
+  await enqueueWrite(async () => {
+    for (const update of updates) {
+      const fields: string[] = [];
+      const values: any[] = [];
+      if (update.server_log_id !== undefined) {
+        fields.push("server_log_id = ?", "server_id = ?");
+        values.push(update.server_log_id, update.server_log_id);
+      }
+      if (update.sync_confirmed !== undefined) {
+        fields.push("sync_confirmed = ?");
+        values.push(update.sync_confirmed);
+      }
+      if (fields.length === 0) continue;
+      values.push(update.id);
+      await db.runAsync(
+        `UPDATE attendance_logs SET ${fields.join(", ")} WHERE id = ?`,
+        values,
+      );
+    }
+  });
+}
+
+export async function upsertEmployeeFromServer(
+  employee: Omit<Employee, "sync_state" | "embedding_avg"> & {
+    embedding_avg?: Float32Array;
+  },
+): Promise<void> {
+  const db = getDatabase();
+  const existing = await db.getAllAsync<any>(
+    "SELECT embedding_avg, embeddings_json FROM employees WHERE id = ?",
+    [employee.id],
+  );
+  const existingEmbedding =
+    existing.length > 0 ? existing[0].embedding_avg : null;
+  const existingEmbeddingsJson =
+    existing.length > 0 ? existing[0].embeddings_json : null;
+
+  const embeddingBlob = employee.embedding_avg
+    ? new Uint8Array(employee.embedding_avg.buffer)
+    : existingEmbedding;
+  const embeddingsJson =
+    employee.embeddings_json !== undefined
+      ? employee.embeddings_json
+      : existingEmbeddingsJson;
+
+  await enqueueWrite(async () => {
+    await db.runAsync(
+      `
+      INSERT INTO employees (
+        id, org_id, branch_id, user_id, code, name, status, embedding_avg, embeddings_json,
+        last_server_update, updated_at, sync_state
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        org_id = excluded.org_id,
+        branch_id = excluded.branch_id,
+        user_id = excluded.user_id,
+        code = excluded.code,
+        name = excluded.name,
+        status = excluded.status,
+        embedding_avg = excluded.embedding_avg,
+        embeddings_json = excluded.embeddings_json,
+        last_server_update = excluded.last_server_update,
+        updated_at = excluded.updated_at,
+        sync_state = 'clean'
+      `,
+      [
+        employee.id,
+        employee.org_id,
+        employee.branch_id,
+        employee.user_id || null,
+        employee.code || null,
+        employee.name,
+        employee.status,
+        embeddingBlob,
+        embeddingsJson,
+        employee.last_server_update || employee.updated_at || Date.now(),
+        employee.updated_at || Date.now(),
+        "clean",
+      ],
+    );
+    logger.debug(
+      `[DB] Upserted employee: id=${employee.id}, org_id=${employee.org_id}, branch_id=${employee.branch_id}, name=${employee.name}, isInsert=${existing.length === 0}`,
+    );
+  });
+}
+
+export async function upsertShift(shift: {
+  id: string;
+  org_id: string;
+  branch_id?: string | null;
+  name: string;
+  start_time: string;
+  end_time: string;
+  grace_in_min?: number;
+  grace_out_min?: number;
+  grace_period_minutes?: number;
+  working_days?: string | null;
+  updated_at: number;
+}): Promise<void> {
+  const db = getDatabase();
+  await enqueueWrite(async () => {
+    await db.runAsync(
+      `
+      INSERT INTO shifts (
+        id, org_id, branch_id, name, start_time, end_time, grace_in_min, grace_out_min,
+        grace_period_minutes, working_days, updated_at, sync_state
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        org_id = excluded.org_id,
+        branch_id = excluded.branch_id,
+        name = excluded.name,
+        start_time = excluded.start_time,
+        end_time = excluded.end_time,
+        grace_in_min = excluded.grace_in_min,
+        grace_out_min = excluded.grace_out_min,
+        grace_period_minutes = excluded.grace_period_minutes,
+        working_days = excluded.working_days,
+        updated_at = excluded.updated_at,
+        sync_state = 'clean'
+      `,
+      [
+        shift.id,
+        shift.org_id,
+        shift.branch_id || null,
+        shift.name,
+        shift.start_time,
+        shift.end_time,
+        shift.grace_in_min || 0,
+        shift.grace_out_min || 0,
+        shift.grace_period_minutes || 0,
+        shift.working_days || null,
+        shift.updated_at,
+        "clean",
+      ],
+    );
+  });
+}
+
+export async function replaceEmployeeShifts(
+  employeeId: string,
+  shifts: {
+    id: string;
+    org_id: string;
+    shift_id: string;
+    effective_from: string;
+    effective_to?: string | null;
+  }[],
+): Promise<void> {
+  const db = getDatabase();
+  await enqueueWrite(async () => {
+    await db.runAsync("DELETE FROM employee_shifts WHERE employee_id = ?", [
+      employeeId,
+    ]);
+
+    for (const shift of shifts) {
+      await db.runAsync(
+        `INSERT INTO employee_shifts (id, org_id, employee_id, shift_id, effective_from, effective_to)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          shift.id,
+          shift.org_id,
+          employeeId,
+          shift.shift_id,
+          shift.effective_from,
+          shift.effective_to || null,
+        ],
+      );
+    }
+  });
 }
 
 // Sync Queue operations
